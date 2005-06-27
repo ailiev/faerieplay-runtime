@@ -20,6 +20,7 @@ all: install
 build: runtime
 
 install: build
+	strip runtime
 	install runtime $(DESTDIR)
 
 runtime: run-circuit.o $(LIBOBJS) $(PIRCARD)/hostcall.o

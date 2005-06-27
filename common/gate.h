@@ -19,8 +19,9 @@ enum gate_op_kind_t {
 };
 
 struct gate_op_t {
-    gate_op_kind_t kind;
-    int param1, param2;
+    gate_op_kind_t  kind;
+    int 	    params[4];	// currently need a max of 3 params (for
+				// WriteDynArray), but just plan ahead
 };
 
 
@@ -28,13 +29,18 @@ struct gate_op_t {
 enum binop_t {
     Plus,
     Minus,
+	
     Times,
+    Div,
+    Mod,
+
     Eq,				// equality
     LT,				// comparisons
     GT,
     LTEq,
     GTEq,
     NEq,
+
     SR,				// shifts
     SL
 };
@@ -51,25 +57,25 @@ enum gate_flag_t {
 
     
 enum typ_kind_t {
-    Array,
+    Array,			// params: <length> and <size of element type>
     Scalar
 };
 
 
 struct typ_t {
-    typ_kind_t kind;
-    int param;
+    typ_kind_t 	kind;
+    int 	params [4];
 };
 
 
 
 struct gate_t {
-    int 		num;
-    typ_t 		typ;
-    gate_op_t 		op;
-    std::vector<int>		inputs;
-    std::list<gate_flag_t> 	flags;
-    std::string		comment;
+    int 		    num;
+    typ_t 		    typ;
+    gate_op_t 		    op;
+    std::vector<int>	    inputs;
+    std::list<gate_flag_t>  flags;
+    std::string		    comment;
 };
 
 

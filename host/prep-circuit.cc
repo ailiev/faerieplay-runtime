@@ -13,6 +13,7 @@
 #include <common/consts.h>
 #include <common/gate.h>
 
+#include <common/misc.h>
 
 //#include <pir/common/comm_types.h>
 
@@ -121,17 +122,73 @@ int prepare_gates_container (istream & gates_in)
 
 	if (gate.op.kind == Input) {
 	    // get the input
-	    int in;
+	    switch (gate.typ.kind) {
+	    case Scalar:
+	    {
+		int in;
+		
+		cerr << "Need input " << gate.comment
+		     << " for gate " << gate.num << ": " << flush;
+		cin >> in;
+		
+		ByteBuffer val (&in, sizeof(in), ByteBuffer::no_free);
+		
+		clog << "writing " << sizeof(in) << " byte input value" << endl;
+		write_obj (val, VALUES_CONT, gate.num);
+	    }
+	    break;
 
-	    cerr << "Need input " << gate.comment
-		 << " for gate " << gate.num << ": " << flush;
-	    cin >> in;
+	    case Array:
+	    {
+		int length	= gate.typ.params[0],
+		    elem_size	= gate.typ.params[1];
 
-	    ByteBuffer val (&in, sizeof(in), ByteBuffer::no_free);
+		char arr_name = 'A';
+		arr_ptr_t arr_ptr = make_array_pointer (arr_name, 0);
+		string arr_cont_name = make_array_container_name (arr_ptr);
 
-	    clog << "writing " << sizeof(in) << " byte input value" << endl;
-	    write_obj (val, VALUES_CONT, gate.num);
-	}
+		string in_str;
+		vector<int> ins (elem_size);
+		
+		// create the clear-text array container
+		init_obj_container ( arr_cont_name,
+				     length,
+				     elem_size * 4 );
+
+		// and prompt for all the values and write them in there
+		for (int l_i = 0; l_i < length; l_i++) {
+
+		    for (int e_i = 0; e_i < elem_size; e_i++) {
+			cerr << "Elt " << l_i << " field " << e_i << ": " << flush;
+			do {
+			    cin  >> in_str;
+			} while (in_str.size() == 0 || in_str[0] == '#');
+
+			ins[e_i] = atoi (in_str.c_str());
+		    }
+
+		    ByteBuffer ins_buf (elem_size * 4);
+		    for (int i=0; i<elem_size; i++) {
+			memcpy (ins_buf.data() + (i*4), & ins[i], sizeof(ins[i]));
+		    }
+
+		    // write the array value into the array container
+		    write_obj (ins_buf, arr_cont_name,
+			       l_i);
+
+		}
+
+		// and write the array pointer into the values table
+		write_obj (ByteBuffer (&arr_ptr, sizeof(arr_ptr), ByteBuffer::no_free),
+			   VALUES_CONT,
+			   gate.num);
+		
+	    } // end case Array:
+	    break;
+
+	    } // end switch (gate.typ.kind)
+
+	} // end if (gate.op.kind == Input)
 	    
 	write_obj (ByteBuffer (g->second, ByteBuffer::SHALLOW),
 		   GATES_CONT,
@@ -140,7 +197,7 @@ int prepare_gates_container (istream & gates_in)
 	write_obj (ByteBuffer (g->second, ByteBuffer::SHALLOW),
 		   CCT_CONT,
 		   i++);
-    }
+    } // end FOREACH (g, gates)
 	
     return max_gate;
 }

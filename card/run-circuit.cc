@@ -1,15 +1,17 @@
 #include <string>
 #include <list>
 #include <functional>
+#include <stdexcept>
 
 #include <iostream>
 #include <sstream>
-#include <stdexcept>
+#include <fstream>
 
 #include <pir/card/hostcall.h>
 #include <pir/common/comm_types.h>
 
 #include <common/gate.h>
+#include <common/misc.h>
 
 using namespace std;
 
@@ -31,6 +33,10 @@ void put_gate_val (int gate_num, const ByteBuffer& val)
     throw (host_exception, xdr_exception, comm_exception);
 
 
+ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
+			  int idx)
+    throw (host_exception, xdr_exception, comm_exception);
+
 
 int main (int argc, char *argv[]) {
 
@@ -41,9 +47,14 @@ int main (int argc, char *argv[]) {
 
     object_name_t obj_name;
     
+    // shut up clog for now
+    ofstream out("/dev/null");
+    if (out)
+	clog.rdbuf(out.rdbuf());
+
 
     try {
-	for (int i=0; i < 17; i++) {
+	for (int i=0; i < 6000; i++) {
 
 	    obj_name = object_name_t (object_id (i));
 	    host_read_blob (CCT_CONT,
@@ -53,10 +64,14 @@ int main (int argc, char *argv[]) {
 // 	clog << "gate_byte len: " << gate_bytes.len() << endl;
 // 	    "bytes: " << gate_bytes.cdata() <<  endl;
 
+	    if (i % 100 == 0) {
+		cerr << "Doing gate " << i << endl;
+	    }
+	    
 	    gate = unserialize_gate (string(gate_bytes.cdata(),
 					    gate_bytes.len()));
 
-	    print_gate (cout, gate);
+//	    print_gate (clog, gate);
 
 	    do_gate (gate);
 
@@ -91,7 +106,7 @@ void do_gate (const gate_t& g)
 	    arg_val[i] = get_int_val (g.inputs[i]);
 	}
 
-	res = do_bin_op (static_cast<binop_t>(g.op.param1),
+	res = do_bin_op (static_cast<binop_t>(g.op.params[0]),
 			 arg_val[0], arg_val[1]);
 
 	res_bytes = ByteBuffer (&res, sizeof(res), ByteBuffer::no_free);
@@ -108,7 +123,7 @@ void do_gate (const gate_t& g)
 	arg_gate = g.inputs[0];
 	arg_val = get_int_val (arg_gate);
 
-	res = do_un_op (static_cast<unop_t>(g.op.param1),
+	res = do_un_op (static_cast<unop_t>(g.op.params[0]),
 			arg_val);
 	res_bytes = ByteBuffer (&res, sizeof(res), ByteBuffer::no_free);
 	
@@ -122,7 +137,7 @@ void do_gate (const gate_t& g)
 
     case Lit:
 	// place the lit value into the slot
-	res = g.op.param1;
+	res = g.op.params[0];
 	res_bytes = ByteBuffer (&res, sizeof(res), ByteBuffer::no_free);
 
 	break;
@@ -142,21 +157,29 @@ void do_gate (const gate_t& g)
 	// it is really a selector!
 	res_bytes = selector ? input_vals[0] : input_vals[1];
     }	
+    break;
 
-/*    
+    
     case ReadDynArray:
     {
-	string arr_name = get_string_val (g.inputs[0]);
+	int depth = g.op.params[0];
+	
+	ByteBuffer arr_ptr = get_gate_val (g.inputs[0]);
 	int idx = get_int_val (g.inputs[1]);
+	
+	ByteBuffer read_res = do_read_array (arr_ptr, idx);
 
-//	res_bytes = do_read_array (arr_name, idx);
+	ByteBuffer * outs [] = {  &arr_ptr, &read_res };
+	res_bytes = concat_bufs (outs, outs + ARRLEN(outs));
     }
     break;
 
+    /*
     case WriteDynArray:
     {
-	int off = g.op.param1;
-	int len = g.op.param2;
+    int depth = g.op.params[0];
+    int off = g.op.params[1];
+    int len = g.op.params[2];
 
 	string arr_name = get_string_val (g.inputs[0]);
 	int idx = get_int_val (g.inputs[1]);
@@ -174,8 +197,29 @@ void do_gate (const gate_t& g)
 
 	do_write_array (arr_name, idx, ins);
     }
+    break;
 
 */
+    case Slicer:
+    {
+	int off, len;
+
+	off = g.op.params[0];
+	len = g.op.params[1];
+
+	ByteBuffer val = get_gate_val (g.inputs[0]);
+	ByteBuffer out (len);
+
+	assert (val.len() >= off + len);
+	memcpy (out.data(), val.data() + off, len);
+
+	res_bytes = out;
+	
+    }
+    break;
+	
+    default:
+	cerr << "At gate " << g.num << ", unknown operation " << g.op.kind << endl;
 
     }
 
@@ -186,9 +230,9 @@ void do_gate (const gate_t& g)
 
     if (elem (Output, g.flags)) {
 	int intval;
-	assert (res_bytes.len() >= sizeof(intval));
+	assert (res_bytes.len() == sizeof(intval));
 	memcpy (&intval, res_bytes.data(), sizeof(intval));
-	clog << "Output g.comment: " << intval << endl;
+	cout << "Output " << g.comment << ": " << intval << endl;
     }
 }
 
@@ -245,6 +289,22 @@ string get_string_val (int gate_num)
 }
 
 
-	
-    
+ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
+			  int idx)
+    throw (host_exception, xdr_exception, comm_exception)
+{
+    arr_ptr_t ptr;
 
+    assert (arr_ptr.len() == sizeof(ptr));
+    memcpy (&ptr, arr_ptr.data(), sizeof(ptr));
+
+    string cont = make_array_container_name (ptr);
+
+    ByteBuffer val;
+
+    host_read_blob (cont,
+		    object_name_t (object_id (idx)),
+		    val);
+
+    return val;
+}

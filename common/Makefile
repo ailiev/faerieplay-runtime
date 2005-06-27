@@ -2,13 +2,9 @@ include ../pir/common.make
 
 
 
-SRCS=gate.cc
-
-_CCOBJS=$(SRCS:.cc=.o)
-OBJS=$(_CCOBJS:.c=.o)
-
-
 CPPFLAGS += -I../pir
+
+CFLAGS += -O -march=i486
 
 LDFLAGS+=-static
 
@@ -17,10 +13,14 @@ LDLIBS += -lcommon -L../pir/common
 
 LIBFILE=libsfdl-common.a
 
+SRCS=misc.cc gate.cc
+all: build
 
-all: $(LIBFILE)
+build: $(LIBFILE)
 
 $(LIBFILE): $(OBJS)
 	ar -ru $@ $^
+
+install: build
 
 include ../footer.make

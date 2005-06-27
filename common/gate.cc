@@ -18,7 +18,13 @@ int do_bin_op (binop_t op, int x, int y) {
     switch (op) {
     case     Plus:  return x + y;
     case     Minus: return x - y;
+
+	// NOTE: we need to be able to handle division by zero. producing an
+	// invalid answer is fine, hopefully a subsequent Select will ignore it.
+    case     Div:   return y != 0 ? x / y : 0;
+    case     Mod:   return y != 0 ? x % y : 0;
     case     Times: return x * y;
+		
     case     LT:    return x < y;
     case     GT:    return x > y;
     case     Eq:    return x == y;
@@ -83,7 +89,8 @@ gate_t unserialize_gate (const string& gate)
 	line_str >> word;
 	if (word == "array") {
 	    answer.typ.kind = Array;
-	    line_str >> answer.typ.param;
+	    line_str >> answer.typ.params[0]; // array length
+	    line_str >> answer.typ.params[1]; // size of element type
 	}
 	else if (word == "scalar") {
 	    answer.typ.kind = Scalar;
@@ -106,37 +113,45 @@ gate_t unserialize_gate (const string& gate)
 	    answer.op.kind = BinOp;
 	    line_str >> word;
 	    if (word == "+") {
-		answer.op.param1 = Plus;
-	    }
-	    else if (word == "*") {
-		answer.op.param1 = Times;
+		answer.op.params[0] = Plus;
 	    }
 	    else if (word == "-") {
-		answer.op.param1 = Minus;
+		answer.op.params[0] = Minus;
 	    }
+	    
+	    else if (word == "*") {
+		answer.op.params[0] = Times;
+	    }
+	    else if (word == "/") {
+		answer.op.params[0] = Div;
+	    }
+	    else if (word == "%") {
+		answer.op.params[0] = Mod;
+	    }
+
 	    else if (word == "<") {
-		answer.op.param1 = LT;
+		answer.op.params[0] = LT;
 	    }
 	    else if (word == ">") {
-		answer.op.param1 = GT;
+		answer.op.params[0] = GT;
 	    }
 	    else if (word == "==") {
-		answer.op.param1 = Eq;
+		answer.op.params[0] = Eq;
 	    }
 	    else if (word == ">=") {
-		answer.op.param1 = GTEq;
+		answer.op.params[0] = GTEq;
 	    }
 	    else if (word == "<=") {
-		answer.op.param1 = LTEq;
+		answer.op.params[0] = LTEq;
 	    }
 	    else if (word == "!=") {
-		answer.op.param1 = NEq;
+		answer.op.params[0] = NEq;
 	    }
 	    else if (word == "<<") {
-		answer.op.param1 = SL;
+		answer.op.params[0] = SL;
 	    }
 	    else if (word == ">>") {
-		answer.op.param1 = SR;
+		answer.op.params[0] = SR;
 	    }
 	    else {
 		cerr << "unknown BinOp " << word << endl;
@@ -146,13 +161,13 @@ gate_t unserialize_gate (const string& gate)
 	    answer.op.kind = UnOp;
 	    line_str >> word;
 	    if (word == "-") {
-		answer.op.param1 = Negate;
+		answer.op.params[0] = Negate;
 	    }
 	    else if (word == "!") {
-		answer.op.param1 = LNot;
+		answer.op.params[0] = LNot;
 	    }
 	    else if (word == "~") {
-		answer.op.param1 = BNot;
+		answer.op.params[0] = BNot;
 	    }
 	    else {
 		cerr << "unknown UnOp " << word << endl;
@@ -166,20 +181,22 @@ gate_t unserialize_gate (const string& gate)
 	}
 	else if (word == "Lit") {
 	    answer.op.kind = Lit;
-	    line_str >> answer.op.param1;
+	    line_str >> answer.op.params[0];
 	}
 	else if (word == "ReadDynArray") {
 	    answer.op.kind = ReadDynArray;
+	    line_str >> answer.op.params[0]; // depth
 	}
 	else if (word == "WriteDynArray") {
 	    answer.op.kind = WriteDynArray;
-	    line_str >> answer.op.param1;
-	    line_str >> answer.op.param2;
+	    line_str >> answer.op.params[0]; // depth
+	    line_str >> answer.op.params[1]; // offset
+	    line_str >> answer.op.params[2]; // length
 	}
 	else if (word == "Slicer") {
 	    answer.op.kind = Slicer;
-	    line_str >> answer.op.param1;
-	    line_str >> answer.op.param2;
+	    line_str >> answer.op.params[0]; // offset
+	    line_str >> answer.op.params[1]; // length
 	
 	}
 	else {
@@ -215,7 +232,7 @@ ostream& print_gate (ostream & out, const gate_t & g) {
 
     switch (g.typ.kind) {
     case Array:
-	out << "Array " << g.typ.param << endl;
+	out << "Array " << g.typ.params[0] << " " << g.typ.params[1] << endl;
 	break;
     case Scalar:
 	out << "Scalar" << endl;
@@ -225,28 +242,38 @@ ostream& print_gate (ostream & out, const gate_t & g) {
     switch (g.op.kind) {
     case BinOp:
 	out << "BinOp ";
-	switch (g.op.param1) {
+	switch (g.op.params[0]) {
 	case Plus:
 	    out << "+" << endl;
 	    break;
 	case Minus:
 	    out << "-" << endl;
 	    break;
+	    
 	case Times:
 	    out << "*" << endl;
 	    break;
+	case Div:
+	    out << "/" << endl;
+	    break;
+	case Mod:
+	    out << "%" << endl;
+	    break;
+	    
 	case LT:
 	    out << "<" << endl;
 	    break;
 	case GT:
 	    out << ">" << endl;
 	    break;
+	    
 	case SR:
 	    out << ">>" << endl;
 	    break;
 	case SL:
 	    out << "<<" << endl;
 	    break;
+	    
 	default:
 	    out << "unknown" << endl;
 	    break;
@@ -255,7 +282,7 @@ ostream& print_gate (ostream & out, const gate_t & g) {
 	
     case UnOp:
 	out << "UnOp ";
-	switch (g.op.param1) {
+	switch (g.op.params[0]) {
 	case Negate:
 	    out << "-" << endl;
 	    break;
@@ -265,8 +292,9 @@ ostream& print_gate (ostream & out, const gate_t & g) {
 	case LNot:
 	    out << "!" << endl;
 	    break;
+	    
 	default:
-	    out << "unknown " << g.op.param1 << endl;
+	    out << "unknown " << g.op.params[0] << endl;
 	    break;
 	}
 	break;

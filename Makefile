@@ -13,6 +13,9 @@ clean: subdirs
 depend : action=depend
 depend: subdirs
 
+install : action=install
+install: subdirs
+
 card host: common
 
 .PHONY: subdirs $(SUBDIRS)
