@@ -4,7 +4,6 @@ include ../pir/common.make
 
 CPPFLAGS += -I../pir
 
-CFLAGS += -O -march=i486
 
 LDFLAGS+=-static
 

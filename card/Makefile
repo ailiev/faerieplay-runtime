@@ -4,6 +4,8 @@ PIRCARD=../pir/card
 
 CPPFLAGS += -I../pir
 
+CFLAGS += -O -march=i486
+
 DESTDIR=~/leeds_root/bin/
 
 SRCS=run-circuit.cc

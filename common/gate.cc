@@ -185,11 +185,9 @@ gate_t unserialize_gate (const string& gate)
 	}
 	else if (word == "ReadDynArray") {
 	    answer.op.kind = ReadDynArray;
-	    line_str >> answer.op.params[0]; // depth
 	}
 	else if (word == "WriteDynArray") {
 	    answer.op.kind = WriteDynArray;
-	    line_str >> answer.op.params[0]; // depth
 	    line_str >> answer.op.params[1]; // offset
 	    line_str >> answer.op.params[2]; // length
 	}
@@ -216,6 +214,16 @@ gate_t unserialize_gate (const string& gate)
 	    answer.inputs.push_back (i);
 	}
     }
+
+    //
+    // depth
+    //
+    {
+	getline (lines, line);
+	istringstream line_str (line);
+	line_str >> answer.depth;
+    }
+    
 
     
     //
@@ -334,6 +342,9 @@ ostream& print_gate (ostream & out, const gate_t & g) {
 
     out << "comm: ";
     out << g.comment << endl << endl;
+
+    out << "depth: ";
+    out << g.depth << endl;
 
     return out;
     

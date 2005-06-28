@@ -48,13 +48,18 @@ int main (int argc, char *argv[]) {
     object_name_t obj_name;
     
     // shut up clog for now
-    ofstream out("/dev/null");
-    if (out)
-	clog.rdbuf(out.rdbuf());
+//     ofstream out("/dev/null");
+//     if (out)
+// 	clog.rdbuf(out.rdbuf());
 
+    size_t num_gates = host_get_cont_len (CCT_CONT);
 
     try {
-	for (int i=0; i < 6000; i++) {
+	for (unsigned i=0; i < num_gates; i++) {
+
+	    if (i % 1 == 0) {
+		cerr << "Doing gate " << i << endl;
+	    }
 
 	    obj_name = object_name_t (object_id (i));
 	    host_read_blob (CCT_CONT,
@@ -64,9 +69,6 @@ int main (int argc, char *argv[]) {
 // 	clog << "gate_byte len: " << gate_bytes.len() << endl;
 // 	    "bytes: " << gate_bytes.cdata() <<  endl;
 
-	    if (i % 100 == 0) {
-		cerr << "Doing gate " << i << endl;
-	    }
 	    
 	    gate = unserialize_gate (string(gate_bytes.cdata(),
 					    gate_bytes.len()));
@@ -162,8 +164,6 @@ void do_gate (const gate_t& g)
     
     case ReadDynArray:
     {
-	int depth = g.op.params[0];
-	
 	ByteBuffer arr_ptr = get_gate_val (g.inputs[0]);
 	int idx = get_int_val (g.inputs[1]);
 	
@@ -220,6 +220,7 @@ void do_gate (const gate_t& g)
 	
     default:
 	cerr << "At gate " << g.num << ", unknown operation " << g.op.kind << endl;
+	exit (EXIT_FAILURE);
 
     }
 
