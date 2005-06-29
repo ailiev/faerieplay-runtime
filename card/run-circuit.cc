@@ -8,10 +8,14 @@
 #include <fstream>
 
 #include <pir/card/hostcall.h>
+#include <pir/card/4758_sym_crypto.h>
+
 #include <pir/common/comm_types.h>
+#include <pir/common/sym_crypto.h>
 
 #include <common/gate.h>
 #include <common/misc.h>
+#include <common/consts-sfdl.h>
 
 using namespace std;
 
@@ -19,24 +23,49 @@ using namespace std;
 
 
 void do_gate (const gate_t& gate)
-    throw (xdr_exception, host_exception, comm_exception);
+    ;
+
+void do_unwrap (const ByteBuffer& val)
+    ;
 
 
 int get_int_val (int gate_num)
-    throw (host_exception, xdr_exception, comm_exception);
+    ;
 string get_string_val (int gate_num)
-    throw (host_exception, xdr_exception, comm_exception);
+    ;
 ByteBuffer get_gate_val (int gate_num)
-    throw (host_exception, xdr_exception, comm_exception);
+    ;
 
 void put_gate_val (int gate_num, const ByteBuffer& val)
-    throw (host_exception, xdr_exception, comm_exception);
+    ;
 
 
 ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 			  int idx)
-    throw (host_exception, xdr_exception, comm_exception);
+    ;
 
+void do_write_array (const ByteBuffer& arr_ptr,
+		     int off, int len,
+		     int idx,
+		     const ByteBuffer& new_val)
+    ;
+
+
+void read_gate (gate_t & o_gate,
+		int gate_num)
+    ;
+
+
+
+static void exception_exit (const std::exception& ex, const string& msg) {
+    cerr << msg << ":" << endl
+	 << ex.what() << endl
+	 << "Exiting ..." << endl;
+    exit (EXIT_FAILURE);
+}
+
+
+SymWrapper * g_symrap = NULL;
 
 int main (int argc, char *argv[]) {
 
@@ -45,33 +74,46 @@ int main (int argc, char *argv[]) {
     string gate_str;
     gate_t gate;
 
-    object_name_t obj_name;
-    
     // shut up clog for now
-//     ofstream out("/dev/null");
-//     if (out)
-// 	clog.rdbuf(out.rdbuf());
+//    ofstream out("/dev/null");
+//    if (out)
+    clog.rdbuf(NULL);
 
     size_t num_gates = host_get_cont_len (CCT_CONT);
 
+
+    //
+    // crypto setup, for now just used to provide the correct timings
+    //
+    ByteBuffer mac_key (20),	// SHA1 HMAC key
+	enc_key (24);		// TDES key
+
+    auto_ptr<SymCryptProvider>	symop;
+    auto_ptr<MacProvider>		macop;
+    auto_ptr<CryptoProviderFactory>	provfact;
+
+    try {
+	symop.reset (new SymCrypt4758 ());
+	macop.reset (new SHA1HMAC_4758());
+	provfact.reset (new CryptProvFactory4758());
+    }
+    catch (const crypto_exception& ex) {
+	exception_exit (ex, "Error making crypto providers");
+    }
+
+    SymWrapper symrap (enc_key, *symop, mac_key, *macop);
+    g_symrap = &symrap;
+
+
+    
     try {
 	for (unsigned i=0; i < num_gates; i++) {
 
-	    if (i % 1 == 0) {
+	    if (i % 100 == 0) {
 		cerr << "Doing gate " << i << endl;
 	    }
 
-	    obj_name = object_name_t (object_id (i));
-	    host_read_blob (CCT_CONT,
-			    obj_name,
-			    gate_bytes);
-
-// 	clog << "gate_byte len: " << gate_bytes.len() << endl;
-// 	    "bytes: " << gate_bytes.cdata() <<  endl;
-
-	    
-	    gate = unserialize_gate (string(gate_bytes.cdata(),
-					    gate_bytes.len()));
+	    read_gate (gate, i);
 
 //	    print_gate (clog, gate);
 
@@ -89,9 +131,30 @@ int main (int argc, char *argv[]) {
 }
 
 
+void read_gate (gate_t & o_gate,
+		int gate_num)
+    
+{
+    ByteBuffer gate_bytes;
+    
+    host_read_blob (CCT_CONT,
+		    object_name_t (object_id (gate_num)),
+		    gate_bytes);
+
+    // this just needs to be a MAC check, but a decrypt should take a similar
+    // time
+    do_unwrap (gate_bytes);
+
+// 	clog << "gate_byte len: " << gate_bytes.len() << endl;
+// 	    "bytes: " << gate_bytes.cdata() <<  endl;
+
+	    
+    o_gate = unserialize_gate (string(gate_bytes.cdata(),
+				      gate_bytes.len()));
+}
 
 void do_gate (const gate_t& g)
-    throw (xdr_exception, host_exception, comm_exception)
+    
 {
     int res;
     ByteBuffer res_bytes;
@@ -169,19 +232,18 @@ void do_gate (const gate_t& g)
 	
 	ByteBuffer read_res = do_read_array (arr_ptr, idx);
 
-	ByteBuffer * outs [] = {  &arr_ptr, &read_res };
+	ByteBuffer outs [] = {  arr_ptr, read_res };
 	res_bytes = concat_bufs (outs, outs + ARRLEN(outs));
     }
     break;
 
-    /*
+/*
     case WriteDynArray:
     {
-    int depth = g.op.params[0];
-    int off = g.op.params[1];
-    int len = g.op.params[2];
+	int off = g.op.params[0];
+	int len = g.op.params[1];
 
-	string arr_name = get_string_val (g.inputs[0]);
+	ByteBuffer arr_ptr = get_gate_val (g.inputs[0]);
 	int idx = get_int_val (g.inputs[1]);
 
 
@@ -193,13 +255,20 @@ void do_gate (const gate_t& g)
 		   get_gate_val);
 
 	// concatenate the inputs
-	ByteBuffer ins = concat_bufs (vals);
+	ByteBuffer ins = concat_bufs (vals.begin(), vals.end());
 
-	do_write_array (arr_name, idx, ins);
+	// read in the whole array gate to see what depth it was at
+	gate_t arr_gate;
+	read_gate (arr_gate, arr_gate_num);
+
+
+
+	do_write_array (arr_ptr, idx, off, len, ins,
+			arr_gate.depth, g.depth);
     }
     break;
-
 */
+
     case Slicer:
     {
 	int off, len;
@@ -219,11 +288,13 @@ void do_gate (const gate_t& g)
     break;
 	
     default:
-	cerr << "At gate " << g.num << ", unknown operation " << g.op.kind << endl;
+	cerr << "At gate " << g.num
+	     << ", unknown operation " << g.op.kind << endl;
 	exit (EXIT_FAILURE);
 
     }
 
+    
     if (res_bytes.len() > 0) {
 	put_gate_val (g.num, res_bytes);
     }
@@ -238,8 +309,11 @@ void do_gate (const gate_t& g)
 }
 
 
+
+
+
 void put_gate_val (int gate_num, const ByteBuffer& val)
-    throw (host_exception, xdr_exception, comm_exception)
+    
 {
     host_write_blob (VALUES_CONT,
 		     object_name_t (object_id (gate_num)),
@@ -248,7 +322,7 @@ void put_gate_val (int gate_num, const ByteBuffer& val)
 
 
 ByteBuffer get_gate_val (int gate_num)
-    throw (host_exception, xdr_exception, comm_exception)
+    
 {
 
     ByteBuffer buf;
@@ -256,6 +330,9 @@ ByteBuffer get_gate_val (int gate_num)
     host_read_blob (VALUES_CONT,
 		    object_name_t (object_id (gate_num)),
 		    buf);
+
+    do_unwrap (buf);
+
 
     clog << "get_gate_val for gate " << gate_num
 	 << ": len=" << buf.len() << endl;
@@ -266,7 +343,7 @@ ByteBuffer get_gate_val (int gate_num)
 
 // get the current value at this gate's output
 int get_int_val (int gate_num)
-    throw (host_exception, xdr_exception, comm_exception)
+    
 {
 
     int answer;
@@ -281,7 +358,7 @@ int get_int_val (int gate_num)
 
 
 string get_string_val (int gate_num)
-    throw (host_exception, xdr_exception, comm_exception)
+    
 {
 
     ByteBuffer buf = get_gate_val (gate_num);
@@ -292,20 +369,146 @@ string get_string_val (int gate_num)
 
 ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 			  int idx)
-    throw (host_exception, xdr_exception, comm_exception)
+    
 {
     arr_ptr_t ptr;
 
+    static int arr_len = -1;
+    static unsigned workset_len;
+    static unsigned req_num = 0;
+    
     assert (arr_ptr.len() == sizeof(ptr));
     memcpy (&ptr, arr_ptr.data(), sizeof(ptr));
 
     string cont = make_array_container_name (ptr);
 
+    if (arr_len < 0) {
+	arr_len = host_get_cont_len (cont);
+	workset_len = sqrt(float(arr_len)) * ilog2(arr_len);
+    }
+
     ByteBuffer val;
 
-    host_read_blob (cont,
+    // some extra reads here to simulate going through the working area.
+    for (int i = 0; i < workset_len; i++) {
+	host_read_blob (cont,
+			object_name_t (object_id (idx)),
+			val);
+    }
+
+    if (req_num++ > workset_len) {
+
+	req_num = 0;
+	
+	// reshuffle!
+	cerr << "Reshuffle!" << endl;
+	
+	unsigned num_switches =
+	    arr_len *
+	    ilog2(arr_len) *
+	    ilog2(arr_len) / 4;
+	
+	ByteBuffer buf1, buf2;
+	
+	for (int i = 0; i < num_switches; i++) {
+	    host_read_blob (cont,
+			    object_name_t (object_id (0)),
+			    buf1);
+	    host_read_blob (cont,
+			    object_name_t (object_id (1)),
+			    buf2);
+
+	    host_write_blob (cont,
+			     object_name_t (object_id (0)),
+			     buf1);
+	    host_write_blob (cont,
+			     object_name_t (object_id (1)),
+			     buf2);
+	}
+
+	cerr << "Reshuffle done!" << endl;
+    }
+    
+    return val;
+}
+
+/*
+void do_write_array (const ByteBuffer& arr_ptr,
+		     int off, int len,
+		     int idx,
+		     const ByteBuffer& new_val,
+		     int prev_depth, int this_depth)
+    
+{
+    arr_ptr_t ptr;
+    char arr_name;
+    int arr_depth;
+
+    assert (len == new_val.len());
+    
+    assert (arr_ptr.len() == sizeof(ptr));
+    memcpy (&ptr, arr_ptr.data(), sizeof(ptr));
+
+    string src_cont = make_array_container_name (arr_ptr);
+
+    arr_ptr = make_array_pointer (arr_name, arr_depth);
+    split_array_ptr (&arr_name, &arr_depth, arr_ptr);
+    if (this_depth > prev_depth) {
+	arr_depth = this_depth;
+    }
+    
+    string dest_cont = make_array_container_name (arr_ptr);
+
+    ByteBuffer val;
+
+    host_read_blob (src_cont,
 		    object_name_t (object_id (idx)),
 		    val);
 
-    return val;
+    // splice in the partial value
+    if (len < 0) {
+	len = val.len();
+    }
+    memcpy (val.data() + off, new_val.data(), len);
+
+    // perhaps copy the blob
+    if (this_depth > prev_depth) {
+	host_copy_container (src_cont, dest_cont);
+    }
+
+    // and write it into the dest
+    host_write_blob (dest_cont,
+		     object_name_t (object_id (idx)),
+		     val);
 }
+*/
+
+
+void do_unwrap (const ByteBuffer& val)
+    
+{
+    ByteBuffer temp;
+
+    size_t len = val.len();
+    if (len < 24)
+	len = 23;		// make sure the next if triggers
+    
+    if (len % 8 != 0) {
+	temp = realloc_buf (val, round_up (len, 8));
+    }
+    else {
+	temp = val;
+    }
+
+    // add 16 because we're skipping the mac check in unwrap, which passes a
+    // longer input to decrypt()
+    ByteBuffer dec (g_symrap->unwraplen (temp.len()) + 16);
+    
+    
+//     cerr << "unwrappign buf of len " << temp.len()
+// 	 << " into buf of len " << dec.len() << endl;
+    
+    g_symrap->unwrap (temp, dec);
+}
+
+

@@ -10,7 +10,7 @@
 #include <pir/host/objio.h>
 #include <pir/common/utils.h>
 
-#include <common/consts.h>
+#include <common/consts-sfdl.h>
 #include <common/gate.h>
 
 #include <common/misc.h>

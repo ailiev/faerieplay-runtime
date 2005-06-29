@@ -1,0 +1,7 @@
+Fri Jun 24 13:30:17 2005
+
+An important note about conditionals in circuits: all the operatins are done
+even of the condition fails! condition only ensures that the intended values are
+used afterwards. so, one cannot guard eg. zero division in the SFDL
+program, the runtime must be able to handle it, probably produce an incorrect
+result, and hope that the SFDL program will ignore it through its conditionals.
