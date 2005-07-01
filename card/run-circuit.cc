@@ -376,6 +376,8 @@ ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
     static int arr_len = -1;
     static unsigned workset_len;
     static unsigned req_num = 0;
+
+    static unsigned BATCHSIZE = 0;
     
     assert (arr_ptr.len() == sizeof(ptr));
     memcpy (&ptr, arr_ptr.data(), sizeof(ptr));
@@ -384,18 +386,32 @@ ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 
     if (arr_len < 0) {
 	arr_len = host_get_cont_len (cont);
-	workset_len = sqrt(float(arr_len)) * ilog2(arr_len);
+	workset_len = sqrt(float(arr_len)) * lgN_floor(arr_len);
+	BATCHSIZE = MIN (workset_len/4, 64);
+	cerr << "BATCHSIZE = " << BATCHSIZE << endl;
     }
 
     ByteBuffer val;
 
+    
     // some extra reads here to simulate going through the working area.
-    for (int i = 0; i < workset_len; i++) {
-	host_read_blob (cont,
-			object_name_t (object_id (idx)),
-			val);
+    for (int i = 0; i < (workset_len/BATCHSIZE); i++) {
+//	object_name_t name (object_id(idx));
+	std::vector<object_name_t> names (BATCHSIZE,
+					  object_name_t (object_id(idx)));
+	obj_list_t results;
+	
+	host_read_blobs (cont,
+			 names,
+			 results);
+
     }
 
+    // and the real read
+    host_read_blob (cont,
+		    object_name_t (object_id(idx)),
+		    val);
+    
     if (req_num++ > workset_len) {
 
 	req_num = 0;
@@ -405,25 +421,23 @@ ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 	
 	unsigned num_switches =
 	    arr_len *
-	    ilog2(arr_len) *
-	    ilog2(arr_len) / 4;
+	    lgN_floor(arr_len) *
+	    lgN_floor(arr_len) / 4;
 	
 	ByteBuffer buf1, buf2;
 	
-	for (int i = 0; i < num_switches; i++) {
-	    host_read_blob (cont,
-			    object_name_t (object_id (0)),
-			    buf1);
-	    host_read_blob (cont,
-			    object_name_t (object_id (1)),
-			    buf2);
+	for (int i = 0; i < num_switches*2 / BATCHSIZE; i++) {
+	    object_name_t name (object_id(16));
+	    std::vector<object_name_t> names (BATCHSIZE, name);
+	    obj_list_t results;
+	    
+	    host_read_blobs (cont,
+			     names,
+			     results);
 
-	    host_write_blob (cont,
-			     object_name_t (object_id (0)),
-			     buf1);
-	    host_write_blob (cont,
-			     object_name_t (object_id (1)),
-			     buf2);
+	    host_write_blobs (cont,
+			      names,
+			      results);
 	}
 
 	cerr << "Reshuffle done!" << endl;

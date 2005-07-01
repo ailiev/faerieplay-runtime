@@ -15,6 +15,7 @@ CFLAGS += -g
 LDLIBS += -lsfdl-common -L../common \
 	  -lcommon      -L../pir/common
 
+VPATH=../pir/common
 LDLIBFILES=-lsfdl-common -lcommon 
 
 TARGET=prep-circuit
