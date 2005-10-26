@@ -21,6 +21,9 @@ int do_bin_op (binop_t op, int x, int y) {
 
 	// NOTE: we need to be able to handle division by zero. producing an
 	// invalid answer is fine, hopefully a subsequent Select will ignore it.
+	// TODO: should concoct a "bottom" value, to represent invalid
+	// computation results which should not be used in subsequent
+	// operations.
     case     Div:   return y != 0 ? x / y : 0;
     case     Mod:   return y != 0 ? x % y : 0;
     case     Times: return x * y;

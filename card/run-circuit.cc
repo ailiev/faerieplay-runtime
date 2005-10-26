@@ -7,6 +7,8 @@
 #include <sstream>
 #include <fstream>
 
+#include <math.h>
+
 #include <pir/card/hostcall.h>
 #include <pir/card/4758_sym_crypto.h>
 

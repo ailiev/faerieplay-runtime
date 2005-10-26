@@ -28,6 +28,17 @@ void prepare_values_container (int num_gates)
     throw (io_exception, std::logic_error);
 
 
+void usage (char *argv[]) {
+    cerr << "Usage: " << argv[0] << " <circuit file>" << endl;
+    
+    cerr << "Produces files:" << endl;
+    cerr << CCT_CONT << ": container with the circuit gates, in text encoding,\n"
+	"\tand ordered topologically." << endl;
+    cerr << GATES_CONT << ": container with the circuit gates, in text encoding,\n"
+	"\tand with gate number g in cont[g]." << endl;
+    cerr << VALUES_CONT << ": container with the circuit values,\n"
+	"\tinitially blank except for the inputs" << endl;
+}
 
 
 int main (int argc, char *argv[]) {
@@ -44,7 +55,7 @@ int main (int argc, char *argv[]) {
     
     ifstream gates_in (argv[1]);
     if (!gates_in) {
-	cerr << "Usage: " << argv[0] << " <circuit file>" << endl;
+	usage(argv);
 	exit (EXIT_FAILURE);
     }
     

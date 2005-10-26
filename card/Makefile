@@ -12,7 +12,7 @@ CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
 
 CPPFLAGS += -DNDEBUG
 
-CFLAGS += -O -march=i486
+CFLAGS += #-O -march=i486
 
 DESTDIR=~/leeds_root/bin/
 
@@ -40,7 +40,7 @@ all: build
 build: runtime
 
 install: build
-	strip runtime
+#	strip runtime
 	install runtime $(DESTDIR)
 
 run-circuit.o : CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
