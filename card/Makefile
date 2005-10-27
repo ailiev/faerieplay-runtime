@@ -16,7 +16,7 @@ CFLAGS += #-O -march=i486
 
 DESTDIR=~/leeds_root/bin/
 
-SRCS=run-circuit.cc
+SRCS=run-circuit.cc enc-circuit.cc
 
 LIBOBJS=
 
@@ -35,17 +35,28 @@ LDLIBFILES=-lsfdl-common -lcommon
 SCC_INCLUDE = $(TOP)/$(TREE)/include
 
 
+EXES=runtime enc-circuit
+
 all: build
 
-build: runtime
+build: $(EXES)
 
 install: build
-#	strip runtime
-	install runtime $(DESTDIR)
+	strip $(EXES)
+	install $(EXES) $(DESTDIR)
 
-run-circuit.o : CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
-runtime: run-circuit.o $(LIBOBJS) $(PIRCARD)/hostcall.o $(PIRCARD)/4758_sym_crypto.o $(LDLIBFILES)
+# the commands and all for run-circuit and enc-circuit are identical!
+CCT_FLAGS=-I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
+CCT_DEPS=$(LIBOBJS) $(PIRCARD)/hostcall.o $(PIRCARD)/4758_sym_crypto.o $(PIRCARD)/lib.o $(PIRCARD)/consts.o $(LDLIBFILES)
+
+run-circuit.o : CPPFLAGS += $(CCT_FLAGS)
+runtime: run-circuit.o $(CCT_DEPS)
 	$(CXXLINK)
+
+enc-circuit.o : CPPFLAGS += $(CCT_FLAGS)
+enc-circuit: enc-circuit.o $(CCT_DEPS)
+	$(CXXLINK)
+
 
 # give the dependency generation step all the include dirs
 depend : CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)

@@ -10,6 +10,8 @@
 #include <math.h>
 
 #include <pir/card/hostcall.h>
+#include <pir/card/lib.h>
+#include <pir/card/consts.h>
 #include <pir/card/4758_sym_crypto.h>
 
 #include <pir/common/comm_types.h>
@@ -85,10 +87,15 @@ int main (int argc, char *argv[]) {
 
 
     //
-    // crypto setup, for now just used to provide the correct timings
+    // crypto setup
     //
     ByteBuffer mac_key (20),	// SHA1 HMAC key
 	enc_key (24);		// TDES key
+
+    // read in the keys
+    // FIXME: this is a little too brittle, with all the names hardwired
+    loadkeys (enc_key, CARD_CRYPTO_DIR + "/" + ENC_KEY_FILE,
+	      mac_key, CARD_CRYPTO_DIR + "/" + MAC_KEY_FILE);
 
     auto_ptr<SymCryptProvider>	symop;
     auto_ptr<MacProvider>		macop;
@@ -518,7 +525,7 @@ void do_unwrap (const ByteBuffer& val)
 
     // add 16 because we're skipping the mac check in unwrap, which passes a
     // longer input to decrypt()
-    ByteBuffer dec (g_symrap->unwraplen (temp.len()) + 16);
+    ByteBuffer dec (g_symrap->unwraplen (temp.len()));
     
     
 //     cerr << "unwrappign buf of len " << temp.len()

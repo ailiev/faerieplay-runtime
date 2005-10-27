@@ -9,6 +9,7 @@
 
 #include <pir/host/objio.h>
 #include <pir/common/utils.h>
+#include <pir/common/consts.h>
 
 #include <common/consts-sfdl.h>
 #include <common/gate.h>
@@ -83,7 +84,8 @@ int prepare_gates_container (istream & gates_in)
     int max_gate = 0;
     ostringstream gate;
     vector< pair<int,string> > gates;
-    
+
+
     while (true) {
 	    
 	// get the gate number
@@ -201,11 +203,14 @@ int prepare_gates_container (istream & gates_in)
 
 	} // end if (gate.op.kind == Input)
 	    
-	write_obj (ByteBuffer (g->second, ByteBuffer::SHALLOW),
+	// write the string form of the gate into the two containers.
+	ByteBuffer gatestring = ByteBuffer (g->second, ByteBuffer::SHALLOW);
+
+	write_obj (gatestring,
 		   GATES_CONT,
 		   g->first);
 
-	write_obj (ByteBuffer (g->second, ByteBuffer::SHALLOW),
+	write_obj (gatestring,
 		   CCT_CONT,
 		   i++);
     } // end FOREACH (g, gates)
