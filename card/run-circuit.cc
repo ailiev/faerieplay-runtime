@@ -512,6 +512,9 @@ void do_unwrap (const ByteBuffer& val)
 {
     ByteBuffer temp;
 
+    temp = val;
+
+#if 0
     size_t len = val.len();
     if (len < 24)
 	len = 23;		// make sure the next if triggers
@@ -522,13 +525,12 @@ void do_unwrap (const ByteBuffer& val)
     else {
 	temp = val;
     }
-
-    // add 16 because we're skipping the mac check in unwrap, which passes a
-    // longer input to decrypt()
+#endif
+    
     ByteBuffer dec (g_symrap->unwraplen (temp.len()));
     
     
-//     cerr << "unwrappign buf of len " << temp.len()
+//     clog << "unwrappign buf of len " << temp.len()
 // 	 << " into buf of len " << dec.len() << endl;
     
     g_symrap->unwrap (temp, dec);
