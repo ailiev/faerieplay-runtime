@@ -29,7 +29,7 @@ using namespace std;
 void do_gate (const gate_t& gate)
     ;
 
-void do_unwrap (const ByteBuffer& val)
+void do_unwrap (ByteBuffer& val)
     ;
 
 
@@ -68,8 +68,17 @@ static void exception_exit (const std::exception& ex, const string& msg) {
     exit (EXIT_FAILURE);
 }
 
+void out_of_memory () {
+    cerr << "Out of memory!" << endl;
+    // trigger a SEGV, so we can get a core dump	    
+    * ((int*) (0x0)) = 42;
+//    throw std::bad_alloc();
+}
+
+
 
 SymWrapper * g_symrap = NULL;
+
 
 int main (int argc, char *argv[]) {
 
@@ -81,7 +90,9 @@ int main (int argc, char *argv[]) {
     // shut up clog for now
 //    ofstream out("/dev/null");
 //    if (out)
-    clog.rdbuf(NULL);
+//    clog.rdbuf(NULL);
+
+    set_new_handler (out_of_memory);
 
     size_t num_gates = host_get_cont_len (CCT_CONT);
 
@@ -154,12 +165,14 @@ void read_gate (gate_t & o_gate,
     // time
     do_unwrap (gate_bytes);
 
+    clog << "Unwrapped gate to " << gate_bytes.len() << " bytes" << endl;
+    string gate_str (gate_bytes.cdata(), gate_bytes.len());
+    clog << "The gate:" << endl << gate_str << endl;
+
 // 	clog << "gate_byte len: " << gate_bytes.len() << endl;
 // 	    "bytes: " << gate_bytes.cdata() <<  endl;
 
-	    
-    o_gate = unserialize_gate (string(gate_bytes.cdata(),
-				      gate_bytes.len()));
+    o_gate = unserialize_gate (gate_str);
 }
 
 void do_gate (const gate_t& g)
@@ -507,7 +520,7 @@ void do_write_array (const ByteBuffer& arr_ptr,
 */
 
 
-void do_unwrap (const ByteBuffer& val)
+void do_unwrap (ByteBuffer& val)
     
 {
     ByteBuffer temp;
@@ -534,6 +547,6 @@ void do_unwrap (const ByteBuffer& val)
 // 	 << " into buf of len " << dec.len() << endl;
     
     g_symrap->unwrap (temp, dec);
+
+    val = dec;
 }
-
-

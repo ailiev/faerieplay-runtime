@@ -14,9 +14,14 @@
 #include <pir/card/lib.h>
 #include <pir/card/consts.h>
 #include <pir/card/4758_sym_crypto.h>
+#include <pir/card/configs.h>
 
 #include <pir/common/comm_types.h>
 #include <pir/common/sym_crypto.h>
+#ifndef _NO_OPENSSL
+#include <pir/common/openssl_crypto.h>
+#endif
+
 
 #include <common/gate.h>
 #include <common/misc.h>
@@ -35,6 +40,12 @@ static void exception_exit (const std::exception& ex, const string& msg) {
 }
 
 
+static void usage (const char* progname) {
+    cerr << "Usage: " << progname << " [-p <card server por>]" << endl
+	 << "\t[-d <crypto dir>]" << endl
+	 << "\t[-c (use 4758 crypto hw?)]" << endl;
+}
+
 
 int main (int argc, char *argv[])
 {
@@ -45,10 +56,46 @@ int main (int argc, char *argv[])
     // shut up clog for now
 //    ofstream out("/dev/null");
 //    if (out)
-    clog.rdbuf(NULL);
+//    clog.rdbuf(NULL);
 
-    size_t num_gates = host_get_cont_len (CCT_CONT);
 
+
+    //
+    // process options
+    //
+
+    init_default_configs ();
+    
+
+    int opt;
+    while ((opt = getopt(argc, argv, "p:d:c")) != EOF) {
+	switch (opt) {
+
+	case 'p':
+	    g_configs.host_serv_port = atoi(optarg);
+	    break;
+	    
+	case 'd':		//directory for keys etc
+	    g_configs.crypto_dir = optarg;
+	    break;
+
+	case 'c':
+	    g_configs.use_card_crypt_hw = true;
+	    break;
+
+	default:
+	    usage(argv[0]);
+	    exit (EXIT_SUCCESS);
+	}
+    }
+
+#ifdef _NO_OPENSSL
+    if (!g_configs.use_card_crypt_hw) {
+	cerr << "Warning: OpenSSL not compiled in, will try to use 4758 crypto"
+	     << endl;
+	g_configs.use_card_crypt_hw = true;
+    }
+#endif
 
     //
     // crypto setup
@@ -66,9 +113,20 @@ int main (int argc, char *argv[])
     auto_ptr<CryptoProviderFactory>	provfact;
 
     try {
-	symop.reset (new SymCrypt4758 ());
-	macop.reset (new SHA1HMAC_4758());
-	provfact.reset (new CryptProvFactory4758());
+	if (g_configs.use_card_crypt_hw) {
+	    symop.reset (new SymCrypt4758 ());
+	    macop.reset (new SHA1HMAC_4758());
+	    provfact.reset (new CryptProvFactory4758());
+	}
+#ifndef _NO_OPENSSL
+	else {
+	    provfact.reset (new OpenSSLCryptProvFactory());
+	    
+	    symop.reset (new OSSLSymCrypto());
+	    macop.reset (new OSSL_HMAC());
+	}
+#endif
+	
     }
     catch (const crypto_exception& ex) {
 	exception_exit (ex, "Error making crypto providers");
@@ -77,6 +135,7 @@ int main (int argc, char *argv[])
     SymWrapper symrap (enc_key, *symop, mac_key, *macop);
 
 
+    size_t num_gates = host_get_cont_len (CCT_CONT);
 
     try {
 	for (unsigned i=0; i < num_gates; i++) {

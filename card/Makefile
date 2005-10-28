@@ -34,6 +34,14 @@ LDLIBFILES=-lsfdl-common -lcommon
 # SCC communication headers
 SCC_INCLUDE = $(TOP)/$(TREE)/include
 
+#ifndef NOPENSSL
+LDLIBS += -lssl -lcrypto
+#endif
+
+ifdef NOPENSSL
+CPPFLAGS += -D_NO_OPENSSL
+endif
+
 
 EXES=runtime enc-circuit
 
@@ -42,12 +50,15 @@ all: build
 build: $(EXES)
 
 install: build
-	strip $(EXES)
+#	strip $(EXES)
 	install $(EXES) $(DESTDIR)
+
+# get libcard.a from this dir:
+vpath %.a $(PIRCARD)
 
 # the commands and all for run-circuit and enc-circuit are identical!
 CCT_FLAGS=-I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
-CCT_DEPS=$(LIBOBJS) $(PIRCARD)/hostcall.o $(PIRCARD)/4758_sym_crypto.o $(PIRCARD)/lib.o $(PIRCARD)/consts.o $(LDLIBFILES)
+CCT_DEPS=$(LIBOBJS) -lcard
 
 run-circuit.o : CPPFLAGS += $(CCT_FLAGS)
 runtime: run-circuit.o $(CCT_DEPS)
@@ -59,6 +70,6 @@ enc-circuit: enc-circuit.o $(CCT_DEPS)
 
 
 # give the dependency generation step all the include dirs
-depend : CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
+depend : CPPFLAGS += $(CCT_FLAGS)
 
 include ../footer.make
