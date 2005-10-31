@@ -13,6 +13,10 @@
 #include <pir/card/lib.h>
 #include <pir/card/consts.h>
 #include <pir/card/4758_sym_crypto.h>
+#ifndef _NO_OPENSSL
+#include <pir/common/openssl_crypto.h>
+#endif
+#include <pir/card/configs.h>
 
 #include <pir/common/comm_types.h>
 #include <pir/common/sym_crypto.h>
@@ -68,63 +72,170 @@ static void exception_exit (const std::exception& ex, const string& msg) {
     exit (EXIT_FAILURE);
 }
 
+#include <signal.h>		// for raise()
 void out_of_memory () {
     cerr << "Out of memory!" << endl;
     // trigger a SEGV, so we can get a core dump	    
-    * ((int*) (0x0)) = 42;
-//    throw std::bad_alloc();
+    // * ((int*) (0x0)) = 42;
+    raise (SIGTRAP);
+    throw std::bad_alloc();
 }
 
+
+static void usage (const char* progname) {
+    cerr << "Usage: " << progname << " [-p <card server por>]" << endl
+	 << "\t[-d <crypto dir>]" << endl
+	 << "\t[-c (use 4758 crypto hw?)]" << endl;
+}
 
 
 SymWrapper * g_symrap = NULL;
 
 
-int main (int argc, char *argv[]) {
-
-    
-    ByteBuffer gate_bytes, val;
-    string gate_str;
-    gate_t gate;
-
-    // shut up clog for now
-//    ofstream out("/dev/null");
-//    if (out)
-//    clog.rdbuf(NULL);
-
-    set_new_handler (out_of_memory);
-
-    size_t num_gates = host_get_cont_len (CCT_CONT);
-
+void init_crypt () {
 
     //
     // crypto setup
     //
+    
     ByteBuffer mac_key (20),	// SHA1 HMAC key
 	enc_key (24);		// TDES key
 
-    // read in the keys
-    // FIXME: this is a little too brittle, with all the names hardwired
-    loadkeys (enc_key, CARD_CRYPTO_DIR + "/" + ENC_KEY_FILE,
-	      mac_key, CARD_CRYPTO_DIR + "/" + MAC_KEY_FILE);
 
     auto_ptr<SymCryptProvider>	symop;
     auto_ptr<MacProvider>		macop;
-    auto_ptr<CryptoProviderFactory>	provfact;
+//    auto_ptr<CryptoProviderFactory>	provfact;
 
     try {
-	symop.reset (new SymCrypt4758 ());
-	macop.reset (new SHA1HMAC_4758());
-	provfact.reset (new CryptProvFactory4758());
+	if (g_configs.use_card_crypt_hw) {
+	    symop.reset (new SymCrypt4758 ());
+	    macop.reset (new SHA1HMAC_4758());
+//	    provfact.reset (new CryptProvFactory4758());
+	}
+#ifndef _NO_OPENSSL
+	else {
+//	    provfact.reset (new OpenSSLCryptProvFactory());
+	    
+	    symop.reset (new OSSLSymCrypto());
+	    macop.reset (new OSSL_HMAC());
+	}
+#endif
+	
     }
     catch (const crypto_exception& ex) {
 	exception_exit (ex, "Error making crypto providers");
     }
 
-    SymWrapper symrap (enc_key, *symop, mac_key, *macop);
-    g_symrap = &symrap;
+
+    // this object lives for the duration of the prog, so no cleanup strategy in
+    // mind here
+    g_symrap = new SymWrapper (enc_key, *symop, mac_key, *macop);
+}
 
 
+void do_configs (int argc, char *argv[]) {
+    //
+    // process options
+    //
+
+    init_default_configs ();
+    
+
+    int opt;
+    while ((opt = getopt(argc, argv, "p:d:c")) != EOF) {
+	switch (opt) {
+
+	case 'p':
+	    g_configs.host_serv_port = atoi(optarg);
+	    break;
+	    
+	case 'd':		//directory for keys etc
+	    g_configs.crypto_dir = optarg;
+	    break;
+
+	case 'c':
+	    g_configs.use_card_crypt_hw = true;
+	    break;
+
+	default:
+	    usage(argv[0]);
+	    exit (EXIT_SUCCESS);
+	}
+    }
+
+#ifdef _NO_OPENSSL
+    if (!g_configs.use_card_crypt_hw) {
+	cerr << "Warning: OpenSSL not compiled in, will try to use 4758 crypto"
+	     << endl;
+	g_configs.use_card_crypt_hw = true;
+    }
+#endif
+
+
+}
+
+
+int main (int argc, char *argv[]) {
+
+    
+    gate_t gate;
+
+    // shut up clog for now
+//    clog.rdbuf(NULL);
+
+    set_new_handler (out_of_memory);
+
+    do_configs (argc, argv);
+
+//    init_crypt ();
+
+    //
+    // crypto setup
+    //
+    
+    ByteBuffer mac_key (20),	// SHA1 HMAC key
+	enc_key (24);		// TDES key
+
+    // read in the keys
+    // FIXME: this is a little too brittle, with all the names hardwired
+    // read in the keys
+    // FIXME: this is a little too brittle, with all the names hardwired
+    loadkeys (enc_key, g_configs.crypto_dir + DIRSEP + ENC_KEY_FILE,
+	      mac_key, g_configs.crypto_dir + DIRSEP + MAC_KEY_FILE);
+
+    auto_ptr<SymCryptProvider>	symop;
+    auto_ptr<MacProvider>		macop;
+//    auto_ptr<CryptoProviderFactory>	provfact;
+
+    try {
+	if (g_configs.use_card_crypt_hw) {
+	    symop.reset (new SymCrypt4758 ());
+	    macop.reset (new SHA1HMAC_4758());
+//	    provfact.reset (new CryptProvFactory4758());
+	}
+#ifndef _NO_OPENSSL
+	else {
+//	    provfact.reset (new OpenSSLCryptProvFactory());
+	    
+	    symop.reset (new OSSLSymCrypto());
+	    macop.reset (new OSSL_HMAC());
+	}
+#endif
+	
+    }
+    catch (const crypto_exception& ex) {
+	exception_exit (ex, "Error making crypto providers");
+    }
+
+
+    // this object lives for the duration of the prog, so no cleanup strategy in
+    // mind here
+    g_symrap = new SymWrapper (enc_key, *symop, mac_key, *macop);
+
+    
+
+
+    size_t num_gates = host_get_cont_len (CCT_CONT);
     
     try {
 	for (unsigned i=0; i < num_gates; i++) {
@@ -146,9 +257,8 @@ int main (int argc, char *argv[]) {
 	exit (EXIT_FAILURE);
     }
     
-
-
 }
+
 
 
 void read_gate (gate_t & o_gate,
@@ -174,6 +284,7 @@ void read_gate (gate_t & o_gate,
 
     o_gate = unserialize_gate (gate_str);
 }
+
 
 void do_gate (const gate_t& g)
     
@@ -337,9 +448,11 @@ void do_gate (const gate_t& g)
 void put_gate_val (int gate_num, const ByteBuffer& val)
     
 {
+    ByteBuffer enc = g_symrap->wrap (val);
+    
     host_write_blob (VALUES_CONT,
 		     object_name_t (object_id (gate_num)),
-		     val);
+		     enc);
 }
 
 

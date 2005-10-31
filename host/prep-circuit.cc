@@ -47,6 +47,8 @@ int main (int argc, char *argv[]) {
     string cct_cont_name = "circuit";
     int num_gates;
 
+    string store_root = STOREROOT;
+    
     // shut up clog for now
     /*
     ofstream out("/dev/null");
@@ -54,12 +56,33 @@ int main (int argc, char *argv[]) {
 	clog.rdbuf(out.rdbuf());
     */
     
-    ifstream gates_in (argv[1]);
+    int opt;
+    while ((opt = getopt(argc, argv, "d:")) != EOF) {
+	switch (opt) {
+
+	case 'd':		//directory for keys etc
+	    store_root = optarg;
+	    break;
+
+	default:
+	    usage(argv);
+	    exit (EXIT_SUCCESS);
+	}
+    }
+
+    ifstream gates_in;
+    
+    if (optind < argc) {
+        gates_in.open  (argv[optind]);
+    }
+
     if (!gates_in) {
 	usage(argv);
 	exit (EXIT_FAILURE);
     }
     
+    
+    init_objio (store_root);
     
     try {
 	num_gates = prepare_gates_container (gates_in);

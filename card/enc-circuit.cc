@@ -49,14 +49,9 @@ static void usage (const char* progname) {
 
 int main (int argc, char *argv[])
 {
-    ByteBuffer gate_bytes;
-    string gate_str;
-    gate_t gate;
 
     // shut up clog for now
-//    ofstream out("/dev/null");
-//    if (out)
-//    clog.rdbuf(NULL);
+    //    clog.rdbuf(NULL);
 
 
 
@@ -97,16 +92,18 @@ int main (int argc, char *argv[])
     }
 #endif
 
+
     //
     // crypto setup
     //
+    
     ByteBuffer mac_key (20),	// SHA1 HMAC key
 	enc_key (24);		// TDES key
 
     // read in the keys
     // FIXME: this is a little too brittle, with all the names hardwired
-    loadkeys (enc_key, CARD_CRYPTO_DIR + DIRSEP + ENC_KEY_FILE,
-	      mac_key, CARD_CRYPTO_DIR + DIRSEP + MAC_KEY_FILE);
+    loadkeys (enc_key, g_configs.crypto_dir + DIRSEP + ENC_KEY_FILE,
+	      mac_key, g_configs.crypto_dir + DIRSEP + MAC_KEY_FILE);
 
     auto_ptr<SymCryptProvider>	symop;
     auto_ptr<MacProvider>		macop;
@@ -135,21 +132,43 @@ int main (int argc, char *argv[])
     SymWrapper symrap (enc_key, *symop, mac_key, *macop);
 
 
-    size_t num_gates = host_get_cont_len (CCT_CONT);
+    //
+    // and do the work ...
+    //
 
     try {
-	for (unsigned i=0; i < num_gates; i++) {
+	ByteBuffer obj_bytes;
 
-	    host_read_blob (CCT_CONT,
-			    object_name_t (object_id (i)),
-			    gate_bytes);
-
-	    gate_bytes = symrap.wrap (gate_bytes);
+	string conts[] = { CCT_CONT, VALUES_CONT };
+	
+	// go through all the containers
+	for (unsigned c = 0; c < ARRLEN(conts); c++) {
 	    
-	    host_write_blob (CCT_CONT,
-			     object_name_t (object_id (i)),
-			     gate_bytes);
+	    clog << "*** Working on container " << conts[c] << endl;
+	    
+	    size_t num_objs = host_get_cont_len (conts[c]);
+	    
+	    // and each object in the container
+	    for (unsigned i=0; i < num_objs; i++) {
 
+		host_read_blob (conts[c],
+				object_name_t (object_id (i)),
+				obj_bytes);
+		
+		// skip 0-length objects
+		if (obj_bytes.len() == 0) {
+		    continue;
+		}
+		
+		obj_bytes = symrap.wrap (obj_bytes);
+
+		clog << "Writing " << obj_bytes.len() << " bytes for object " <<
+		    i << endl;
+		
+		host_write_blob (conts[c],
+				 object_name_t (object_id (i)),
+				 obj_bytes);
+	    }
 	}
     }
     catch (const std::exception & ex) {
@@ -157,20 +176,4 @@ int main (int argc, char *argv[])
 	exit (EXIT_FAILURE);
     }
     
-}
-
-
-void do_gate (int gate_num)
-    
-{
-    ByteBuffer gate_bytes;
-    
-    host_read_blob (CCT_CONT,
-		    object_name_t (object_id (gate_num)),
-		    gate_bytes);
-
-// 	clog << "gate_byte len: " << gate_bytes.len() << endl;
-// 	    "bytes: " << gate_bytes.cdata() <<  endl;
-
-	    
 }

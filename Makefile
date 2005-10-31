@@ -10,8 +10,8 @@ $(SUBDIRS):
 clean : action=clean
 clean: subdirs
 
-depend : action=depend
-depend: subdirs
+all : action=all
+all: subdirs
 
 install : action=install
 install: subdirs

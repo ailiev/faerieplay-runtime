@@ -20,7 +20,7 @@ SRCS=run-circuit.cc enc-circuit.cc
 
 LIBOBJS=
 
-LDFLAGS+=-static
+# LDFLAGS+=-static
 
 LDLIBS += -lsfdl-common -L../common \
 	  -lcommon      -L../pir/common
