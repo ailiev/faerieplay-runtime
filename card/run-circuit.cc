@@ -653,6 +653,9 @@ void do_unwrap (ByteBuffer& val)
     }
 #endif
     
+    // VULNERABILITY: if temp.len() is too small, unwraplen() would return
+    // negative, ie. very large in unsigned. Then the allocation of the buffer
+    // will fail.
     ByteBuffer dec (g_symrap->unwraplen (temp.len()));
     
     
