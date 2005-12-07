@@ -105,22 +105,15 @@ int main (int argc, char *argv[])
     loadkeys (enc_key, g_configs.crypto_dir + DIRSEP + ENC_KEY_FILE,
 	      mac_key, g_configs.crypto_dir + DIRSEP + MAC_KEY_FILE);
 
-    auto_ptr<SymCryptProvider>	symop;
-    auto_ptr<MacProvider>		macop;
     auto_ptr<CryptoProviderFactory>	provfact;
 
     try {
 	if (g_configs.use_card_crypt_hw) {
-	    symop.reset (new SymCrypt4758 ());
-	    macop.reset (new SHA1HMAC_4758());
 	    provfact.reset (new CryptProvFactory4758());
 	}
 #ifndef _NO_OPENSSL
 	else {
 	    provfact.reset (new OpenSSLCryptProvFactory());
-	    
-	    symop.reset (new OSSLSymCrypto());
-	    macop.reset (new OSSL_HMAC());
 	}
 #endif
 	
@@ -129,7 +122,7 @@ int main (int argc, char *argv[])
 	exception_exit (ex, "Error making crypto providers");
     }
 
-    SymWrapper symrap (enc_key, *symop, mac_key, *macop);
+    SymWrapper symrap (enc_key, mac_key, provfact.get());
 
 
     //

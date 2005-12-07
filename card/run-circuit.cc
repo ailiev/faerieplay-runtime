@@ -102,22 +102,15 @@ void init_crypt () {
 	enc_key (24);		// TDES key
 
 
-    auto_ptr<SymCryptProvider>	symop;
-    auto_ptr<MacProvider>		macop;
-//    auto_ptr<CryptoProviderFactory>	provfact;
+    auto_ptr<CryptoProviderFactory>	provfact;
 
     try {
 	if (g_configs.use_card_crypt_hw) {
-	    symop.reset (new SymCrypt4758 ());
-	    macop.reset (new SHA1HMAC_4758());
-//	    provfact.reset (new CryptProvFactory4758());
+	    provfact.reset (new CryptProvFactory4758());
 	}
 #ifndef _NO_OPENSSL
 	else {
-//	    provfact.reset (new OpenSSLCryptProvFactory());
-	    
-	    symop.reset (new OSSLSymCrypto());
-	    macop.reset (new OSSL_HMAC());
+	    provfact.reset (new OpenSSLCryptProvFactory());
 	}
 #endif
 	
@@ -129,7 +122,7 @@ void init_crypt () {
 
     // this object lives for the duration of the prog, so no cleanup strategy in
     // mind here
-    g_symrap = new SymWrapper (enc_key, *symop, mac_key, *macop);
+    g_symrap = new SymWrapper (enc_key, mac_key, provfact.get());
 }
 
 
@@ -203,22 +196,15 @@ int main (int argc, char *argv[]) {
     loadkeys (enc_key, g_configs.crypto_dir + DIRSEP + ENC_KEY_FILE,
 	      mac_key, g_configs.crypto_dir + DIRSEP + MAC_KEY_FILE);
 
-    auto_ptr<SymCryptProvider>	symop;
-    auto_ptr<MacProvider>		macop;
-//    auto_ptr<CryptoProviderFactory>	provfact;
+    auto_ptr<CryptoProviderFactory>	provfact;
 
     try {
 	if (g_configs.use_card_crypt_hw) {
-	    symop.reset (new SymCrypt4758 ());
-	    macop.reset (new SHA1HMAC_4758());
-//	    provfact.reset (new CryptProvFactory4758());
+	    provfact.reset (new CryptProvFactory4758());
 	}
 #ifndef _NO_OPENSSL
 	else {
-//	    provfact.reset (new OpenSSLCryptProvFactory());
-	    
-	    symop.reset (new OSSLSymCrypto());
-	    macop.reset (new OSSL_HMAC());
+	    provfact.reset (new OpenSSLCryptProvFactory());
 	}
 #endif
 	
@@ -230,11 +216,9 @@ int main (int argc, char *argv[]) {
 
     // this object lives for the duration of the prog, so no cleanup strategy in
     // mind here
-    g_symrap = new SymWrapper (enc_key, *symop, mac_key, *macop);
+    g_symrap = new SymWrapper (enc_key, mac_key, provfact.get());
 
     
-
-
     size_t num_gates = host_get_cont_len (CCT_CONT);
     
     try {
@@ -508,6 +492,7 @@ ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 {
     arr_ptr_t ptr;
 
+    // HACK! there will be more than one array!
     static int arr_len = -1;
     static unsigned workset_len;
     static unsigned req_num = 0;
