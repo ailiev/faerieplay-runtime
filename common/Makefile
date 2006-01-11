@@ -1,25 +1,22 @@
-include ../pir/common.make
+include ../header.make
 
+include $(PIR)/common.make
 
+LIBS=libsfdl-common.$(LIBEXT)
 
-CPPFLAGS += -I../pir
-
-
-LDFLAGS+=-static
-
-LDLIBS += -lcommon -L../pir/common
-
-
-LIBFILE=libsfdl-common.a
+TARGETS=$(LIBS)
 
 SRCS=misc.cc gate.cc
+
 all: build
 
-build: $(LIBFILE)
+build: $(LIBS)
 
-$(LIBFILE): $(OBJS)
+$(LIBS): $(OBJS)
 	ar -ru $@ $^
 
 install: build
+	install $(LIBS) $(LEEDS_LIB)
+
 
 include ../footer.make

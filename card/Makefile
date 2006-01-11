@@ -13,20 +13,13 @@ CPPFLAGS += -DNDEBUG
 
 CFLAGS += #-O -march=i486
 
-DESTDIR=~/leeds_root/bin/
+DESTDIR=$(LEEDS_BIN)
 
-SRCS=run-circuit.cc enc-circuit.cc
 LIBSRCS=array.cc utils.cc
+SRCS=run-circuit.cc enc-circuit.cc $(LIBSRCS)
 
 
 # LDFLAGS+=-static
-
-LDLIBS += -lsfdl-common -L../common \
-	  -lcommon      -L$(PIR)/common
-
-# what were these??
-#VPATH=$(PIR)/common
-#LDLIBFILES=-lsfdl-common -lcommon
 
 
 # the headers for the 4758 crypto interface are in the IBM patched kernel source
@@ -43,24 +36,28 @@ CPPFLAGS += -D_NO_OPENSSL
 endif
 
 
-EXES=runtime enc-circuit
+TARGETS=runtime enc-circuit
 
 all: build
 
-build: $(EXES)
+build: $(TARGETS)
 
 install: build
-#	strip $(EXES)
-	install $(EXES) $(DESTDIR)
+#	strip $(TARGETS)
+	install $(TARGETS) $(DESTDIR)
 
-LIBOBJS=$(LIBSRCS .cc=.o)
+LIBOBJS=$(LIBSRCS:.cc=.o)
 
-# get libcard.a from this dir:
-vpath %.a $(PIRCARD)
+
+# external libraries. they get added into LDLIBS in common.make
+LIBDIRS = $(PIRCARD) ../common $(PIR)/common
+LDLIBFILES = -lcard -lsfdl-common -lcommon
+vpath %.so $(LIBDIRS)
+
 
 # the commands and all for run-circuit and enc-circuit are identical!
 CCT_FLAGS=-I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
-CCT_DEPS=$(LIBOBJS) -lcard
+CCT_DEPS=$(LIBOBJS) $(LDLIBFILES)
 
 run-circuit.o : CPPFLAGS += $(CCT_FLAGS)
 runtime: run-circuit.o $(CCT_DEPS)

@@ -1,33 +1,32 @@
-include ../pir/common.make
+include ../header.make
+include $(PIR)/common.make
 
-PIRCARD=../pir/card
-PIRHOST=../pir/host
+
+PIRCARD=$(PIR)/card
+PIRHOST=$(PIR)/host
 
 SRCS=prep-circuit.cc
 
+DESTDIR=$(LEEDS_BIN)
 
-DESTDIR=~/leeds_root/
-
-CPPFLAGS += -I../pir
-
+# no space problem on the host usually
 CFLAGS += -g
 
-LDLIBS += -lsfdl-common -L../common \
-	  -lcommon      -L../pir/common
+LIBDIRS = $(PIR)/common ../common
+LDLIBFILES=-lsfdl-common -lcommon
+vpath %.so $(LIBDIRS)
 
-VPATH=../pir/common
-LDLIBFILES=-lsfdl-common -lcommon 
 
-TARGET=prep-circuit
+TARGETS=prep-circuit
 
 all: build
 
-build: $(TARGET)
+build: $(TARGETS)
 
 install: build
-	install $(TARGET) $(DESTDIR)
+	install $(TARGETS) $(DESTDIR)
 
-$(TARGET): $(OBJS) $(PIRHOST)/objio.o $(LDLIBFILES)
+$(TARGETS): $(OBJS) $(PIRHOST)/objio.o $(LDLIBFILES)
 	$(CXXLINK)
 
 
