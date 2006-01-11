@@ -120,8 +120,12 @@ int prepare_gates_container (istream & gates_in)
 	    getline (gates_in, line);
 	    clog << "gate " << gate_num << endl;
 	}
-	else {
+	else if (gates_in.eof()) {
 	    break;		// done
+	}
+	else {
+	    // probably just a blank line
+	    continue;
 	}
 	    
 	/// and the rest of the gate lines
@@ -137,7 +141,8 @@ int prepare_gates_container (istream & gates_in)
 	gate.str("");
     }
 	
-
+    clog << "Done reading circuit" << endl;
+    
     init_obj_container (CCT_CONT,
 			gates.size(),
 			CONTAINER_OBJ_SIZE);
@@ -163,7 +168,7 @@ int prepare_gates_container (istream & gates_in)
 	    {
 		int in;
 		
-		cerr << "Need input " << gate.comment
+		cout << "Need input " << gate.comment
 		     << " for gate " << gate.num << ": " << flush;
 		cin >> in;
 		

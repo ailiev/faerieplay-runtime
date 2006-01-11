@@ -53,8 +53,8 @@ private:
     size_t N
 	,  _elem_size;
 
-//    SymWrapper _sym_wrapper; held by the _io
-
+    size_t		_max_retrievals;
+    
     HostIO _array_io, _touched_io;
 
     std::auto_ptr<RandProvider> _rand_prov;
@@ -71,7 +71,6 @@ private:
 
     std::auto_ptr<TwoWayPermutation>   _p;
     
-    size_t		_max_retrievals;
     
     // how many retrievals this session?
     size_t              _num_retrievals;

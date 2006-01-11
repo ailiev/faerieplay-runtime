@@ -16,7 +16,16 @@ using std::string;
 using std::auto_ptr;
 
 
-
+// Containers used:
+// 
+// array: the encrypted but unpermuted array values. may or may not exists when
+// the Array object is instantiated:
+// - exists if previusly created eg. as part of input processing.
+// - does not exist if eg. doing an Array Init gate now
+//
+// touched: the elements accessed this session, encrypted and kept sorted (by
+// us)
+// does not exist when the Array object is created.
 
 Array::Array (const string& name,
 	      size_t len, size_t elem_size,
@@ -28,13 +37,18 @@ Array::Array (const string& name,
       N			(len),
       _elem_size	(elem_size),
       
+      _max_retrievals	(sqrt(float(N)) * lgN_floor(N)),
+
       _array_io		(_array_cont,
                          auto_ptr<HostIOFilter>
-                         (new IOFilterEncrypt (auto_ptr<SymWrapper>
+                         (new IOFilterEncrypt (_array_io,
+					       auto_ptr<SymWrapper>
                                                (new SymWrapper (crypt_fact))))),
       _touched_io	(_touched_cont,
+			 _max_retrievals, sizeof(unsigned),
                          auto_ptr<HostIOFilter>
-                         (new IOFilterEncrypt (auto_ptr<SymWrapper>
+                         (new IOFilterEncrypt (_touched_io,
+					       auto_ptr<SymWrapper>
                                                (new SymWrapper (crypt_fact))))),
 
       _rand_prov	(crypt_fact->getRandProvider()),
@@ -42,7 +56,6 @@ Array::Array (const string& name,
       _p		(auto_ptr<TwoWayPermutation>
                          (new LRPermutation (lgN_ceil(len), 7, crypt_fact))),
       
-      _max_retrievals	(sqrt(float(N)) * lgN_floor(N)),
       _num_retrievals	(0)
 {
     /*

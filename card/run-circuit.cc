@@ -82,12 +82,6 @@ void out_of_memory () {
 }
 
 
-static void usage (const char* progname) {
-    cerr << "Usage: " << progname << " [-p <card server por>]" << endl
-	 << "\t[-d <crypto dir>]" << endl
-	 << "\t[-c (use 4758 crypto hw?)]" << endl;
-}
-
 
 SymWrapper * g_symrap = NULL;
 
@@ -123,6 +117,14 @@ void init_crypt () {
     // this object lives for the duration of the prog, so no cleanup strategy in
     // mind here
     g_symrap = new SymWrapper (enc_key, mac_key, provfact.get());
+}
+
+
+static void usage (const char* progname) {
+    cerr << "Usage: " << progname << " [-p <card server por>]" << endl
+	 << "\t[-d <crypto dir>]" << endl
+	 << "\t[-c (use 4758 crypto hw?)]" << endl
+	 << "Runs circuit that card_server is accessing" << endl;
 }
 
 
