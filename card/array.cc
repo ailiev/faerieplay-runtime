@@ -134,3 +134,15 @@ ByteBuffer Array::do_dummy_fetches (int idx,
 
 	
 }
+
+
+
+void Array::repermute ()
+{
+    // steps:
+    // - generate new permutation
+    // - 
+
+
+    _p->randomize();
+}

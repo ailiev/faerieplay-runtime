@@ -30,8 +30,9 @@ void prepare_values_container (int num_gates)
 
 
 void usage (char *argv[]) {
-    cerr << "Usage: " << argv[0] << " <circuit file>" << endl;
-    
+    cerr << "Usage: " << argv[0] << " <circuit file>" << endl
+	 << "\t[-d <output directory>] default=" << STOREROOT << endl;
+    cerr << endl;
     cerr << "Produces files:" << endl;
     cerr << CCT_CONT << ": container with the circuit gates, in text encoding,\n"
 	"\tand ordered topologically." << endl;
@@ -76,7 +77,7 @@ int main (int argc, char *argv[]) {
         gates_in.open  (argv[optind]);
     }
 
-    if (!gates_in) {
+    if (!gates_in || optind >= argc) {
 	usage(argv);
 	exit (EXIT_FAILURE);
     }
@@ -107,6 +108,9 @@ int prepare_gates_container (istream & gates_in)
     int max_gate = 0;
     ostringstream gate;
     vector< pair<int,string> > gates;
+
+    ByteBuffer zeros (8);
+    zeros.set (0);
 
 
     while (true) {
@@ -230,7 +234,13 @@ int prepare_gates_container (istream & gates_in)
 	    } // end switch (gate.typ.kind)
 
 	} // end if (gate.op.kind == Input)
-	    
+	else {
+	    // we should enter something into the values container
+	    write_obj (zeros,
+		       VALUES_CONT,
+		       gate.num);
+	}
+	
 	// write the string form of the gate into the two containers.
 	ByteBuffer gatestring = ByteBuffer (g->second, ByteBuffer::SHALLOW);
 
