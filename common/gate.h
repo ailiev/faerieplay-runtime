@@ -15,7 +15,8 @@ enum gate_op_kind_t {
     Input,
     Select,
     Slicer,
-    Lit
+    Lit,
+    InitDynArray
 };
 
 struct gate_op_t {

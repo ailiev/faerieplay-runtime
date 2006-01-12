@@ -58,15 +58,6 @@ Array::Array (const string& name,
       
       _num_retrievals	(0)
 {
-    /*
-    init_obj_container (_array_cont,
-			N,
-			elem_size);
-
-    init_obj_container (_touched_cont,
-			_max_retrievals,
-			sizeof (unsigned));
-    */
 
     _p->randomize();
 }

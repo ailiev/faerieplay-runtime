@@ -200,6 +200,11 @@ gate_t unserialize_gate (const string& gate)
 	    line_str >> answer.op.params[1]; // length
 	
 	}
+	else if (word == "InitDynArray") {
+	    answer.op.kind = InitDynArray;
+	    line_str >> answer.op.params[0]; // element size
+	    line_str >> answer.op.params[1]; // array length
+	}
 	else {
 	    cerr << "Unknown gate op " << word << endl;
 	}

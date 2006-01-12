@@ -405,6 +405,15 @@ void do_gate (const gate_t& g)
 	
     }
     break;
+
+    
+    case InitDynArray:
+    {
+	size_t elem_size, len;
+	elem_size = g.op.params[0];
+	len = g.op.params[1];
+    }
+    break;
 	
     default:
 	cerr << "At gate " << g.num
