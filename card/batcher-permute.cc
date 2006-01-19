@@ -27,42 +27,53 @@
 #include <functional>
 #include <exception>
 
+#include <boost/shared_ptr.hpp>
+
 #include <unistd.h>		// for getopt()
 #include <time.h>		// for time()
 #include <signal.h>		// for SIGTRAP
 
 
-#include <common/exceptions.h>
-#include <common/record.h>
-#include <common/sym_crypto.h>
-#include <common/openssl_crypto.h>
-#include <common/socket-class.h>
-#include <common/scc-socket.h>
-#include <common/consts.h>
+#include <pir/common/exceptions.h>
+//#include <common/record.h>
+#include <pir/common/sym_crypto.h>
+#ifndef _NO_OPENSSL
+#include <pir/common/openssl_crypto.h>
+#endif
+//#include <pir/common/socket-class.h>
+//#include <common/scc-socket.h>
+//#include <common/consts.h>
 
-#include "lib.h"
-#include "hostcall.h"
-#include "consts.h"
+
+#include <pir/card/lib.h>
+// #include "hostcall.h"
+// #include "consts.h"
+// #include "batcher-permute.h"
+// #include "4758_sym_crypto.h"
+// #include "io.h"
+
+#include "utils.h"
+#include "batcher-network.h"
+
 #include "batcher-permute.h"
-#include "4758_sym_crypto.h"
-#include "io.h"
 
 
-#include "batcher-shuffle.h"
 
 
-static char *id ="$Id$";
+static char *rcsid ="$Id$";
 
 using namespace std;
+
+using boost::shared_ptr;
 
 static const std::string CLEARDIR = "clear",
     CRYPTDIR_BASE = "crypt";
 
 
-static void inform_retriever (const std::string & dbdir,
-			      unsigned short retriever_cardnum)
-    throw (comm_exception);
 
+#ifdef _TESTING_BATCHER_PERMUTE
+
+#include <pir/card/io_filter_encrypt.h>
 
 
 void out_of_memory () {
@@ -86,179 +97,54 @@ usage(const char* progname)
 }
 
 
-
 int main (int argc, char * argv[]) {
 
 
-    unsigned short host_serv_port = PIR_HOSTSERV_PORT;
-    unsigned short retriever_cardnum = CARDNO_RETRIEVER;
-    string dir = CARD_CRYPTO_DIR;
-    bool use_card_crypt_hw = true; // do we use the 4758 hardware for crypto?
-    
-    
-    ByteBuffer keybuf, mackeybuf;
+    // test: construct a container, encrypt it, permute it, and read
+    // out the values
 
-    set_new_handler (out_of_memory);
+    CryptoProviderFactory * prov_fact = new OpenSSLCryptProvFactory ();
+    size_t N = 64;
 
-    int opt;
-    while ((opt = getopt(argc, argv, "p:d:r:c")) != EOF) {
-	switch (opt) {
+    auto_ptr<SymWrapper>   io_sw (new SymWrapper (prov_fact));
 
-        case 'p':		// port
-	    host_serv_port = strtol(optarg, NULL, 0);
-	    if (host_serv_port == 0) {
-		cerr << argv[0] << ": Invalid port" << endl;
-		exit (EXIT_FAILURE);
-	    }
-	    break;
+    // split up the creation of io_ptr and its shared_ptr, so that we can deref
+    // io_ptr and pass it to IOFilterEncrypt. The shared_ptr would not be ready
+    // for the operator* at that point.
+    shared_ptr <FlatIO> io (new FlatIO ("permutation-test-ints", false));
+    io->appendFilter (auto_ptr<HostIOFilter> (
+			  new IOFilterEncrypt (*io, io_sw)));
 
-	case 'd':		//directory for keys etc
-	    dir = optarg;
-	    break;
-
-	case 'c':
-	    use_card_crypt_hw = true;
-	    break;
-
-	case 'r':
-	    retriever_cardnum = atoi (optarg);
-	    break;
-	    
-	default:
-	    usage(argv[0]); 
-	}
+    for (int i = 0; i < N; i++) {
+	hostio_write_int (*io, i, i);
     }
 
-#ifdef _NO_OPENSSL
-    if (!use_card_crypt_hw) {
-	cerr << "Warning: OpenSSL not compiled in, will try to use 4758 crypto"
-	     << endl;
-	use_card_crypt_hw = true;
+    auto_ptr<ForwardPermutation> pi (
+	new LRPermutation (lgN_ceil (N), 7, prov_fact) );
+    Shuffler s (io, pi, N);
+    s.shuffle ();
+
+    for (int i = 0; i < N; i++) {
+	int j = hostio_read_int (*io, i);
+	cout << i << " -> " << j << endl;
     }
-#endif
-
-    
-
-    try {
-	loadkeys (keybuf,    dir + DIRSEP + KEYFILE,
-		  mackeybuf, dir + DIRSEP + MACKEYFILE);
-    }
-    catch (const io_exception& ex) {
-	cerr << "Error loading keys:" << endl
-	     << "\t" << ex.what() << endl;
-	exit (EXIT_FAILURE);
-    }
-
-
-    auto_ptr<CryptoProviderFactory> prov_factory;
-
-    try {
-	if (use_card_crypt_hw) {
-	    prov_factory.reset (new CryptProvFactory4758());
-	}
-#ifndef _NO_OPENSSL
-	else {
-	    prov_factory.reset (new OpenSSLCryptProvFactory());
-	}
-#endif
-    }
-    catch (const crypto_exception& ex) {
-	cerr << "Exception from crypto provider creation!" << endl
-	     << ex.what() << endl;
-	return EXIT_FAILURE;
-    }
-    
-    // DBSIZE and BUCKETSIZE are for now in lib.h
-
-//    hash_t root_hash;
-
-    for (int dbnum = 1; ; dbnum++) {
-
-	std::ostringstream cryptdir_str;
-	cryptdir_str << CRYPTDIR_BASE << dbnum;
-	std::string cryptdir = cryptdir_str.str();
-    
-	try {
-	    size_t blocksize = lgN_floor (DBSIZE);
-	    size_t laddersize = 7;
-
-	    auto_ptr<LRPermutation> perm
-		(new LRPermutation (blocksize, laddersize, prov_factory.get()));
-	    perm->randomize();
-	    
-	    // write it out using a one-time HostIO object
-	    // commnent out while TOY_HOSTCALL_ON_CARD
-	    HostIO (cryptdir).write (SHUFFLEFILE, perm->serialize());
-
-	    // a type cast of sorts, from LRPermutation to the parent
-	    // ForwardPermutation
-	    auto_ptr<ForwardPermutation> fwd_perm (perm);
-	    
-	    Shuffler shuffler (CLEARDIR,
-			       get_crypt_cont_name (cryptdir),
-			       prov_factory.get(),
-			       keybuf, mackeybuf,
-			       fwd_perm,
-			       DBSIZE);
-	    
-	    clog << "Making permuted database..." << endl;
-	    
-	    shuffler.shuffle ();
-
-#if 0
-	    // and now we need to generate the hash tree for this
-	    // shuffled DB
-	    clog << "Making hash tree @ " << epoch_time << endl;
-	    HashTreeBuilder h (cryptdir, prov_factory.get(), DBSIZE);
- 	    root_hash = h.build_hash_tree ();
-
-	    clog << "hash tree done @ " << epoch_time << endl;
-
-	    // FIXME: write the root hash to the crypt dir.
-	    HostIO (cryptdir).write (ROOT_HASH_FILE, root_hash);
-#endif
-
-
-	    // inform the retriever that a new DB is ready
-	    // need to also send:
-	    // - shuffle vector or other key
-	    // - root hash of the hash tree
-//	    inform_retriever (cryptdir, retriever_cardnum);
-	}
-	catch (const exception& ex) {
-	    cerr << "Exception from shuffle: " << ex.what() << endl
-		 << "Exiting" << endl;
-	    return EXIT_FAILURE;
-	}
-
-    }
-
 }
 
 
+
+#endif // _TESTING_BATCHER_PERMUTE
 
 //const size_t Shuffler::TAGSIZE = 4;
 
 
-Shuffler::Shuffler (const std::string& in_container,
-		    const std::string& out_container,
-                    CryptoProviderFactory * provfact,
-		    const ByteBuffer & key, const ByteBuffer & mackey,
-		    auto_ptr<ForwardPermutation> perm,
+Shuffler::Shuffler (shared_ptr<FlatIO> container,
+		    auto_ptr<ForwardPermutation> p,
 		    size_t N)
     throw (crypto_exception)
-    : _key		(key),
-      _mackey		(mackey),
-      _sym_wrapper	(key, mackey, provfact),
-      _crypt_io		(out_container),
-      _clear_io		(in_container),
-      _crypt_rec_io	(_crypt_io),
-      _permutation	(perm),
-      N			(N)
-{
-	// make the host-side container for the permuted DB
-	host_create_container (out_container, N, DEFAULT_MAX_OBJ_SIZE);
-}
+    : _io   (container),
+      _p    (p),
+      N	    (N)
+{}
 
 
 
@@ -271,7 +157,7 @@ void Shuffler::shuffle ()
     
     // should first encrypt all the records to produce the encrypted
     // database, and add the destination index tags to all the records
-    make_encrypted_db();
+    prepare ();
 
     clog << "Done with encrypted DB @ " << epoch_time << endl;
     
@@ -293,53 +179,42 @@ void Shuffler::shuffle ()
 
 
 
-void Shuffler::make_encrypted_db () throw (hostio_exception, crypto_exception)
+void Shuffler::prepare () throw (hostio_exception, crypto_exception)
 {
-    RecBlob current;
-    RecIO clear_rec_io (_clear_io);
+    ByteBuffer current;
     uint32_t dest;
     
-    // read, encrypt and write all the records, no big deal
-    // added: also tag them with their destination index
+    // tag all items with their destination index
 
     for (index_t i=0; i < N; i++) {
 	// read
-	clear_rec_io.read_record (i, current);
+	_io->read (i, current);
 
 	// add tag, using 4 bytes at the end
-	dest = _permutation->p (i);
+	dest = _p->p (i);
 	current = realloc_buf (current, current.len() + TAGSIZE);
 	memcpy ( current.data() + current.len() - TAGSIZE, &dest, TAGSIZE );
 	
-	// encrypt
-	current = _sym_wrapper.wrap (current);
-
 	// write
-	_crypt_rec_io.write_record (i, current);
+	_io->write (i, current);
     }
 }
 
 
 void Shuffler::remove_tags () throw (hostio_exception, crypto_exception)
 {
-    RecBlob current;
+    ByteBuffer current;
     
 
     for (index_t i=0; i < N; i++) {
 	// read
-	_crypt_rec_io.read_record (i, current);
-
-	// decrypt
-	current = _sym_wrapper.unwrap (current);
+	_io->read (i, current);
 
 	// just adjust the length
 	current.len() -= TAGSIZE;
 	
-	// encrypt
-	current = _sym_wrapper.wrap (current);
-
 	// write
-	_crypt_rec_io.write_record (i, current);
+	_io->write (i, current);
     }
 }
 
@@ -361,23 +236,19 @@ void Shuffler::Comparator::operator () (index_t a, index_t b)
     // is it time to do them?
     if (_batch_size == _max_batch_size) {
 
-	rec_list_t recs;
+	obj_list_t objs;
 
 	// first build a list of index_t for all the records involved
 	build_idx_list (_idxs_temp, _comparators);
 
 	// now fetch and decrypt all the blobs.
-	master._crypt_rec_io.read_records (_idxs_temp, recs);
-	master.decrypt_recs (recs);
+	master._io->read (_idxs_temp, objs);
 	
 	// now do the switches inside the blobs list
-	do_comparators (recs, _comparators);
-
-	// re-encrypt the blobs
-	master.encrypt_recs (recs);
+	do_comparators (objs, _comparators);
 
 	// and now write out the switched blobs
-	master._crypt_rec_io.write_records (_idxs_temp, recs);
+	master._io->write (_idxs_temp, objs);
 
 	// reset batch
 	_batch_size = 0;
@@ -448,39 +319,6 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
 //    clog << "Batch list size at end is " << io_recs.size() << endl;
 
     
-}
-
-
-
-void Shuffler::decrypt_recs (rec_list_t & io_blobs)
-    throw (crypto_exception)
-{
-    transform (io_blobs.begin(), io_blobs.end(),
-	       io_blobs.begin(),
-	       memfun_adapt (&SymWrapper::unwrap,
-			     _sym_wrapper));
-}
-
-void Shuffler::encrypt_recs (rec_list_t & io_blobs)
-    throw (crypto_exception)
-{
-    transform (io_blobs.begin(), io_blobs.end(),
-	       io_blobs.begin(),
-	       memfun_adapt (&SymWrapper::wrap,
-			     _sym_wrapper));
-}
-
-
-
-void inform_retriever (const std::string & dbdir,
-		       unsigned short retriever_cardnum)
-    throw (comm_exception)
-{
-
-    SCCDatagramSocket sock;
-    SCCSocketAddress retriever_addr (retriever_cardnum, PIR_CONTROL_PORT);
-
-    sock.sendto (ByteBuffer (dbdir), retriever_addr);
 }
 
 

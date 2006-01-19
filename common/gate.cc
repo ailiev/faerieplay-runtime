@@ -13,6 +13,11 @@
 using namespace std;
 
 
+gate_t::gate_t () :
+    inputs (2)
+{}
+    
+
 int do_bin_op (binop_t op, int x, int y) {
 
     switch (op) {

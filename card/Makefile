@@ -15,7 +15,7 @@ CFLAGS += #-O -march=i486
 
 DESTDIR=$(LEEDS_BIN)
 
-LIBSRCS=array.cc utils.cc
+LIBSRCS=array.cc utils.cc batcher-permute.cc batcher-network.cc 
 SRCS=run-circuit.cc enc-circuit.cc $(LIBSRCS)
 
 
@@ -50,7 +50,7 @@ LIBOBJS=$(LIBSRCS:.cc=.o)
 
 
 # external libraries. they get added into LDLIBS in common.make
-LIBDIRS = $(PIRCARD) ../common $(PIR)/common
+LIBDIRS = $(LEEDS_LIB) ../common
 LDLIBFILES = -lcard -lsfdl-common -lcommon
 vpath %.so $(LIBDIRS)
 
@@ -65,6 +65,10 @@ runtime: run-circuit.o $(CCT_DEPS)
 
 enc-circuit.o : CPPFLAGS += $(CCT_FLAGS)
 enc-circuit: enc-circuit.o $(CCT_DEPS)
+	$(CXXLINK)
+
+permute : CPPFLAGS += -D_TESTING_BATCHER_PERMUTE
+permute: batcher-permute.o $(CCT_DEPS)
 	$(CXXLINK)
 
 

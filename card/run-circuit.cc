@@ -25,8 +25,12 @@
 #include <common/misc.h>
 #include <common/consts-sfdl.h>
 
+#include "array.h"
+
 using namespace std;
 
+
+auto_ptr<CryptoProviderFactory> g_provfact;
 
 
 
@@ -96,15 +100,13 @@ void init_crypt () {
 	enc_key (24);		// TDES key
 
 
-    auto_ptr<CryptoProviderFactory>	provfact;
-
     try {
 	if (g_configs.use_card_crypt_hw) {
-	    provfact.reset (new CryptProvFactory4758());
+	    g_provfact.reset (new CryptProvFactory4758());
 	}
 #ifndef _NO_OPENSSL
 	else {
-	    provfact.reset (new OpenSSLCryptProvFactory());
+	    g_provfact.reset (new OpenSSLCryptProvFactory());
 	}
 #endif
 	
@@ -116,7 +118,7 @@ void init_crypt () {
 
     // this object lives for the duration of the prog, so no cleanup strategy in
     // mind here
-    g_symrap = new SymWrapper (enc_key, mac_key, provfact.get());
+    g_symrap = new SymWrapper (enc_key, mac_key, g_provfact.get());
 }
 
 
@@ -198,15 +200,15 @@ int main (int argc, char *argv[]) {
     loadkeys (enc_key, g_configs.crypto_dir + DIRSEP + ENC_KEY_FILE,
 	      mac_key, g_configs.crypto_dir + DIRSEP + MAC_KEY_FILE);
 
-    auto_ptr<CryptoProviderFactory>	provfact;
+//    auto_ptr<CryptoProviderFactory>	g_provfact;
 
     try {
 	if (g_configs.use_card_crypt_hw) {
-	    provfact.reset (new CryptProvFactory4758());
+	    g_provfact.reset (new CryptProvFactory4758());
 	}
 #ifndef _NO_OPENSSL
 	else {
-	    provfact.reset (new OpenSSLCryptProvFactory());
+	    g_provfact.reset (new OpenSSLCryptProvFactory());
 	}
 #endif
 	
@@ -218,7 +220,7 @@ int main (int argc, char *argv[]) {
 
     // this object lives for the duration of the prog, so no cleanup strategy in
     // mind here
-    g_symrap = new SymWrapper (enc_key, mac_key, provfact.get());
+    g_symrap = new SymWrapper (enc_key, mac_key, g_provfact.get());
 
     
     size_t num_gates = host_get_cont_len (CCT_CONT);
@@ -411,7 +413,15 @@ void do_gate (const gate_t& g)
     {
 	size_t elem_size, len;
 	elem_size = g.op.params[0];
-	len = g.op.params[1];
+	len =	    g.op.params[1];
+
+	// create a new array, give it a number and add it to the map (done
+	// internally by newArray), and write the number as the gate value
+	int arr_num = Array::newArray (g.comment,
+				       len, elem_size,
+				       g_provfact.get());
+
+	res_bytes = ByteBuffer (&arr_num, sizeof(arr_num));
     }
     break;
 	

@@ -71,6 +71,9 @@ struct typ_t {
 
 
 struct gate_t {
+
+    gate_t();
+
     int 		    num;
     int			    depth;
     typ_t 		    typ;

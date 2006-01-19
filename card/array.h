@@ -3,20 +3,38 @@
 #include <string>
 #include <list>
 #include <memory>
+#include <map>
+
+#include <boost/shared_ptr.hpp>
+#include <boost/utility.hpp> // for boost::noncopyable
 
 #include <pir/card/permutation.h>
 #include <pir/card/io.h>
+#include <pir/card/io_flat.h>
 
 #ifndef _CARD_ARRAY_H
 #define _CARD_ARRAY_H
 
-class Array {
+
+
+
+class Array : boost::noncopyable {
 
 public:
 
     Array (const std::string& name,
            size_t len, size_t elem_size,
            CryptoProviderFactory * crypt_fact);
+
+    Array ()
+	{};
+    
+    // this one will create a new array, and add it to the map
+    static int newArray (const std::string& name,
+			 size_t len, size_t elem_size,
+			 CryptoProviderFactory * crypt_fact);
+
+    static Array & getArray (int num);
 
     /// Write a value to an array index
     /// @param idx the target index
@@ -43,6 +61,10 @@ private:
 
     ByteBuffer do_dummy_fetches (int idx,
 				 bool do_writes);
+
+    typedef std::map< int, boost::shared_ptr<Array> > map_t;
+    static map_t _arrays;
+    static int _next_array_num;
     
     std::string _name		// this array's name
 	, _array_cont		// and the container name
@@ -55,7 +77,12 @@ private:
 
     size_t		_max_retrievals;
     
-    HostIO _array_io, _touched_io;
+    // need to hand a factory to permutation objects many times, so hang onto
+    // one
+    CryptoProviderFactory * _prov_fact;
+
+
+    FlatIO _array_io, _touched_io;
 
     std::auto_ptr<RandProvider> _rand_prov;
 

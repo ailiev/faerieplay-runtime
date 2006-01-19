@@ -1,12 +1,13 @@
 #include "utils.h"
 
 // read an integer from this io object
-int hostio_read_int (HostIO & io, index_t idx)
+int hostio_read_int (FlatIO & io, index_t idx)
 {
 
     int answer;
     
-    ByteBuffer buf = io.read (idx);
+    ByteBuffer buf;
+    io.read (idx, buf);
 
     assert (buf.len() == sizeof(answer));
     
@@ -15,10 +16,11 @@ int hostio_read_int (HostIO & io, index_t idx)
 }
 
 
-void hostio_write_int (HostIO & io, index_t idx,
+void hostio_write_int (FlatIO & io, index_t idx,
 		       int val)
 {
-    ByteBuffer buf (&val, sizeof(val));
+    ByteBuffer buf (&val, sizeof(val),
+		    ByteBuffer::no_free);
 
     io.write (idx, buf);
 }
