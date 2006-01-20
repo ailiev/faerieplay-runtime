@@ -201,7 +201,7 @@ void Array::repermute ()
     }
 
     // run the re-permutation on the new container
-    auto_ptr<ForwardPermutation> reperm (new RePermutation (*_p, p2));
+    shared_ptr<ForwardPermutation> reperm (new RePermutation (*_p, p2));
 
     Shuffler shuffler  (p2_cont_io, reperm, N);
     shuffler.shuffle ();

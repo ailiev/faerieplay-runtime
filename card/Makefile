@@ -9,7 +9,7 @@ include $(PIR)/common.make
 
 CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
 
-CPPFLAGS += -DNDEBUG
+# CPPFLAGS += -DNDEBUG
 
 CFLAGS += #-O -march=i486
 

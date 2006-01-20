@@ -115,17 +115,24 @@ int main (int argc, char * argv[]) {
     io->appendFilter (auto_ptr<HostIOFilter> (
 			  new IOFilterEncrypt (*io, io_sw)));
 
-    for (int i = 0; i < N; i++) {
+    for (unsigned i = 0; i < N; i++) {
 	hostio_write_int (*io, i, i);
     }
 
-    auto_ptr<ForwardPermutation> pi (
+    shared_ptr<TwoWayPermutation> pi (
 	new LRPermutation (lgN_ceil (N), 7, prov_fact) );
+    pi->randomize ();
+
+    cout << "The permutation's mapping:" << endl;
+    write_all_preimages (cout, pi.get());
+    
     Shuffler s (io, pi, N);
     s.shuffle ();
 
-    for (int i = 0; i < N; i++) {
-	int j = hostio_read_int (*io, i);
+
+    cout << "And the network's result:" << endl;
+    for (unsigned i = 0; i < N; i++) {
+	unsigned j = hostio_read_int (*io, i);
 	cout << i << " -> " << j << endl;
     }
 }
@@ -138,7 +145,7 @@ int main (int argc, char * argv[]) {
 
 
 Shuffler::Shuffler (shared_ptr<FlatIO> container,
-		    auto_ptr<ForwardPermutation> p,
+		    shared_ptr<ForwardPermutation> p,
 		    size_t N)
     throw (crypto_exception)
     : _io   (container),
@@ -153,13 +160,13 @@ Shuffler::Shuffler (shared_ptr<FlatIO> container,
 void Shuffler::shuffle ()
     throw (hostio_exception, crypto_exception)
 {
-    clog << "Start encrypting DB @ " << epoch_time << endl;
+    clog << "Start preparing DB @ " << epoch_time << endl;
     
     // should first encrypt all the records to produce the encrypted
     // database, and add the destination index tags to all the records
     prepare ();
 
-    clog << "Done with encrypted DB @ " << epoch_time << endl;
+    clog << "Done with preparing DB @ " << epoch_time << endl;
     
 
     // perform the permutation using our own switch function object to perform
