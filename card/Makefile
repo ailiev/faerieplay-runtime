@@ -71,6 +71,9 @@ permute : CPPFLAGS += -D_TESTING_BATCHER_PERMUTE
 permute: batcher-permute.o $(CCT_DEPS)
 	$(CXXLINK)
 
+array : CPPFLAGS += -DTESTING_ARRAY
+array: array.o $(CCT_DEPS)
+	$(CXXLINK)
 
 # give the dependency generation step all the include dirs
 depend : CPPFLAGS += $(CCT_FLAGS)

@@ -536,7 +536,7 @@ ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 
     
     // some extra reads here to simulate going through the working area.
-    for (int i = 0; i < (workset_len/BATCHSIZE); i++) {
+    for (unsigned i = 0; i < (workset_len/BATCHSIZE); i++) {
 //	object_name_t name (object_id(idx));
 	std::vector<object_name_t> names (BATCHSIZE,
 					  object_name_t (object_id(idx)));
@@ -567,7 +567,7 @@ ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 	
 	ByteBuffer buf1, buf2;
 	
-	for (int i = 0; i < num_switches*2 / BATCHSIZE; i++) {
+	for (unsigned i = 0; i < num_switches*2 / BATCHSIZE; i++) {
 	    object_name_t name (object_id(16));
 	    std::vector<object_name_t> names (BATCHSIZE, name);
 	    obj_list_t results;
