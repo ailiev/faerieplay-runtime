@@ -13,7 +13,7 @@ DESTDIR=$(LEEDS_BIN)
 CFLAGS += -g
 
 LIBDIRS = $(PIR)/common ../common
-LDLIBFILES=-lsfdl-common -lcommon
+LDLIBFILES=-lsfdl-common -lcommon -lboost_filesystem
 vpath %.so $(LIBDIRS)
 
 

@@ -157,6 +157,8 @@ Array::Array (const string& name,
 	write_clear (i, zero);
     }
 
+    _array_io.flush();
+
     repermute();
 }
 
@@ -265,6 +267,8 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
 
     }
 
+    _array_io.flush ();
+
     return the_obj;
 }
 
@@ -345,6 +349,7 @@ void Array::add_to_touched (index_t idx)
     // it.
     index_t rand_idx = _rand_prov->randint (N - _num_retrievals);
 
+    size_t batch = 32;
     index_t T_i;
     bool have_idx = false;
     for (index_t i = 0; i < _num_retrievals; i++) {
@@ -388,4 +393,6 @@ void Array::add_to_touched (index_t idx)
 
     // maintain invariant on the _touched_io and _num_retrievals
     _num_retrievals++;
+
+    _touched_io.flush();
 }
