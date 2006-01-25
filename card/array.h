@@ -113,7 +113,7 @@ private:
     /// The encrypted and permuted items
     FlatIO _array_io;
 
-    /// A sorted list of encrypted virtual indices which have been touched in
+    /// A sorted list of encrypted physical indices which have been touched in
     /// previous retrievals.
     ///
     /// \invariant len (#_touched_io) = #_num_retrievals
@@ -136,7 +136,10 @@ private:
 
     std::auto_ptr<TwoWayPermutation>   _p;
     
-    
+    /// batchsize for index's
+    size_t _idx_batchsize;
+    /// batchsize for objects
+    size_t _obj_batchsize;
 };
 
 

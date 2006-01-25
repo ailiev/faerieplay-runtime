@@ -67,12 +67,17 @@ enc-circuit.o : CPPFLAGS += $(CCT_FLAGS)
 enc-circuit: enc-circuit.o $(CCT_DEPS)
 	$(CXXLINK)
 
-permute : CPPFLAGS += -D_TESTING_BATCHER_PERMUTE
-permute: batcher-permute.o $(CCT_DEPS)
+batcher-permute-main.o : CPPFLAGS += -D_TESTING_BATCHER_PERMUTE
+batcher-permute-main.o: batcher-permute.cc
+	$(CXXCOMP)
+permute: $(patsubst batcher-permute.o,batcher-permute-main.o,$(CCT_DEPS))
 	$(CXXLINK)
 
-array : CPPFLAGS += -DTESTING_ARRAY
-array: array.o $(CCT_DEPS)
+# generate a different object file with a main in it
+array-main.o : CPPFLAGS += -DTESTING_ARRAY
+array-main.o: array.cc
+	$(CXXCOMP)
+array: $(patsubst array.o,array-main.o,$(CCT_DEPS))
 	$(CXXLINK)
 
 # give the dependency generation step all the include dirs

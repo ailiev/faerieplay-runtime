@@ -527,7 +527,7 @@ ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 
     if (arr_len < 0) {
 	arr_len = host_get_cont_len (cont);
-	workset_len = sqrt(float(arr_len)) * lgN_floor(arr_len);
+	workset_len = lrint (sqrt(arr_len)) * lgN_floor(arr_len);
 	BATCHSIZE = MIN (workset_len/4, 64);
 	cerr << "BATCHSIZE = " << BATCHSIZE << endl;
     }

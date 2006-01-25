@@ -106,19 +106,20 @@ int main (int argc, char * argv[]) {
     CryptoProviderFactory * prov_fact = new OpenSSLCryptProvFactory ();
     size_t N = 64;
 
-    auto_ptr<SymWrapper>   io_sw (new SymWrapper (prov_fact));
+    shared_ptr<SymWrapper>   io_sw (new SymWrapper (prov_fact));
 
     // split up the creation of io_ptr and its shared_ptr, so that we can deref
     // io_ptr and pass it to IOFilterEncrypt. The shared_ptr would not be ready
     // for the operator* at that point.
-    shared_ptr <FlatIO> io (new FlatIO ("permutation-test-ints", false));
-    io->appendFilter (auto_ptr<HostIOFilter> (
-			  new IOFilterEncrypt (*io, io_sw)));
+    shared_ptr<FlatIO> io (new FlatIO ("permutation-test-ints", false));
+//     io->appendFilter (auto_ptr<HostIOFilter> (
+// 			  new IOFilterEncrypt (io.get(), io_sw)));
 
     for (unsigned i = 0; i < N; i++) {
 	hostio_write_int (*io, i, i);
     }
-
+    io->flush ();
+    
     shared_ptr<TwoWayPermutation> pi (
 	new LRPermutation (lgN_ceil (N), 7, prov_fact) );
     pi->randomize ();
@@ -158,7 +159,7 @@ Shuffler::Shuffler (shared_ptr<FlatIO> container,
 
 
 void Shuffler::shuffle ()
-    throw (hostio_exception, crypto_exception)
+    throw (hostio_exception, crypto_exception, runtime_exception)
 {
     clog << "Start preparing DB @ " << epoch_time << endl;
     
@@ -172,9 +173,11 @@ void Shuffler::shuffle ()
     // perform the permutation using our own switch function object to perform
     // the actual switches
     // TODO: figure out how to set the batch size better
-    const size_t BATCHSIZE = 4;
-    Comparator comparator (*this, BATCHSIZE);
-    run_batcher (N, comparator);
+    {
+	const size_t BATCHSIZE = 4;
+	Comparator comparator (*this, BATCHSIZE);
+	run_batcher (N, comparator);
+    }
 
     // now need to remove the tags of the records
     // could have been good to do it at the last stage of sorting
@@ -186,7 +189,7 @@ void Shuffler::shuffle ()
 
 
 
-void Shuffler::prepare () throw (hostio_exception, crypto_exception)
+void Shuffler::prepare () throw (better_exception)
 {
     ByteBuffer current;
     uint32_t dest;
@@ -205,6 +208,8 @@ void Shuffler::prepare () throw (hostio_exception, crypto_exception)
 	// write
 	_io->write (i, current);
     }
+
+    _io->flush ();
 }
 
 
@@ -223,6 +228,8 @@ void Shuffler::remove_tags () throw (hostio_exception, crypto_exception)
 	// write
 	_io->write (i, current);
     }
+
+    _io->flush();
 }
 
 
@@ -263,6 +270,13 @@ void Shuffler::Comparator::operator () (index_t a, index_t b)
 }
 
 
+Shuffler::Comparator::~Comparator ()
+{
+    if (_batch_size > 0) {
+	throw invalid_state_exception (
+	    "Comparator has not done all its batched comparators!");
+    }
+}
 
 void Shuffler::Comparator::build_idx_list (
     std::vector<index_t> & o_ids,

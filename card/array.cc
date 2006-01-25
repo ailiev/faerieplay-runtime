@@ -46,12 +46,14 @@ int main (int argc, char *argv[])
     // create an array, fill it in with provided data from a text file, then run
     // reads/updates from another text file
 
-    cout << "Start array test run @ " << epoch_time << endl;
+    clog << "Start array test run @ " << epoch_time << endl;
 
     CryptoProviderFactory * prov_fact = new OpenSSLCryptProvFactory ();
     
+#include "array-test-sizes.h"
+    
     Array test ("test-array",
-		256, 10, prov_fact);
+		ARR_ARRAYLEN, ARR_OBJSIZE, prov_fact);
     
     ifstream cmds ("array-test-cmds.txt");
 //    cmds.exceptions (ios::badbit | ios::failbit);
@@ -81,7 +83,7 @@ int main (int argc, char *argv[])
 	}
     }
 
-    cout << "Array test run finished @ " << epoch_time << endl;
+    clog << "Array test run finished @ " << epoch_time << endl;
 
 }
 
@@ -94,6 +96,20 @@ int main (int argc, char *argv[])
 // instantiate the static array map
 Array::map_t Array::_arrays;
 Array::des_t Array::_next_array_num = 1;
+
+
+void prefetch_contiguous_from (FlatIO & io,
+			       index_t start,
+			       size_t howmany)
+    throw (better_exception)
+{
+    return;
+    FlatIO::idx_list_t l (howmany);
+    std::generate (l.begin(), l.end(), counter(start));
+    io.prefetch (l);
+}
+
+    
 
 
 // Containers used:
@@ -129,7 +145,11 @@ Array::Array (const string& name,
       _rand_prov	(_prov_fact->getRandProvider()),
 
       // init to identity permutation, and then do repermute()
-      _p		(auto_ptr<TwoWayPermutation> (new IdPerm (N)))
+      _p		(auto_ptr<TwoWayPermutation> (new IdPerm (N))),
+
+      _idx_batchsize	(32),
+
+      _obj_batchsize	(512 / _elem_size)
 {
 
     // need to:
@@ -138,19 +158,20 @@ Array::Array (const string& name,
     //   IVs)
     // - permute it
 
-    _array_io.appendFilter (
-	auto_ptr<HostIOFilter>
-	(new IOFilterEncrypt (&_array_io,
-			      shared_ptr<SymWrapper>
-			      (new SymWrapper
-			       (_prov_fact)))));
+//     _array_io.appendFilter (
+// 	auto_ptr<HostIOFilter>
+// 	(new IOFilterEncrypt (&_array_io,
+// 			      shared_ptr<SymWrapper>
+// 			      (new SymWrapper
+// 			       (_prov_fact)))));
 
-    _touched_io.appendFilter (
-	auto_ptr<HostIOFilter>
-	(new IOFilterEncrypt (&_touched_io,
-			      shared_ptr<SymWrapper> (
-				  new SymWrapper
-				  (_prov_fact)))));
+//     _touched_io.appendFilter (
+// 	auto_ptr<HostIOFilter>
+// 	(new IOFilterEncrypt (&_touched_io,
+// 			      shared_ptr<SymWrapper> (
+// 				  new SymWrapper
+// 				  (_prov_fact)))));
+
     ByteBuffer zero (_elem_size);
     zero.set (0);
     for (index_t i=0; i < N; i++) {
@@ -200,9 +221,20 @@ ByteBuffer Array::read (index_t idx)
     // - return A[idx] to caller
 
 
-    add_to_touched (idx);
+    index_t p_idx = _p->p(idx);
 
-    ByteBuffer buf = do_dummy_fetches (idx, boost::none);
+//     ByteBuffer obj;
+//     _array_io.read (p_idx, obj);
+//     _num_retrievals++;
+//     if (_num_retrievals > _max_retrievals) {
+// 	repermute ();
+//     }
+//     return obj;
+    
+    
+    add_to_touched (p_idx);
+
+    ByteBuffer buf = do_dummy_fetches (p_idx, boost::none);
 
     if (_num_retrievals > _max_retrievals) {
 	repermute ();
@@ -216,10 +248,20 @@ void Array::write (index_t idx, size_t off,
     throw (better_exception)
 {
     
-    add_to_touched (idx);
+    index_t p_idx = _p->p(idx);
+
+//     _array_io.write (p_idx, val);
+//     _array_io.flush ();
+//     _num_retrievals++;
+//     if (_num_retrievals > _max_retrievals) {
+// 	repermute ();
+//     }
+//     return;
+    
+    add_to_touched (p_idx);
 
     
-    do_dummy_fetches (idx,
+    do_dummy_fetches (p_idx,
 		      std::make_pair (off, val));
 
     if (_num_retrievals > _max_retrievals) {
@@ -229,6 +271,11 @@ void Array::write (index_t idx, size_t off,
 
 
 
+/// retrieve or update an object, while doing all the necesary re-fetches.
+/// @param idx the physical index to read/write
+/// @param new_val pointer to an offset and data value, to be written to
+///       A[idx] if it is non-null
+/// @return the object at #idx
 ByteBuffer Array::do_dummy_fetches (index_t idx,
 				    optional < pair<size_t, ByteBuffer> > new_val)
     throw (better_exception)
@@ -238,34 +285,49 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
     // TODO: if we are reading, no need to decrypt all the objects, but just the
     // real one at the end.
     
+    unsigned that_idx = 0;
+
+#ifndef NDEBUG
+    unsigned that_idx_prev = 0;
+#endif
+    
+    // go through all the _touched_io indices, and read the corresponding ones
+    // in _array_io. One of them must be the one we need (idx)
     for (index_t i = 0; i < _num_retrievals; i++) {
 
-	_array_io.read (idx, obj);
+	that_idx = hostio_read_int (_touched_io, i);
 
-	if (i == idx) {
-	    the_obj = obj;
+#ifndef NDEBUG
+	assert (that_idx >= that_idx_prev);
+	that_idx_prev = that_idx;
+#endif
+	
+	_array_io.read (that_idx, obj);
+
+	if (that_idx == idx) {
+	    the_obj = ByteBuffer (obj, ByteBuffer::DEEPCOPY);
 	    if (new_val) {
-		// FIXME: all sizes need to be the same!
-
-		assert (new_val->second.len() <= _elem_size);
+		// all sizes need to be the same! caller should ensure this
+		assert (new_val->second.len() == _elem_size);
 		
-		ByteBuffer towrite = new_val.get().second;
-		if (new_val->second.len() < _elem_size) {
-		    towrite = realloc_buf (towrite, _elem_size);
-		}
-		// FIXME: ignoring the offset for now
-		_array_io.write (idx, towrite);
+		ByteBuffer towrite = new_val->second;
+		// FIXME: ignoring the offset (new_val->first) for now
+		_array_io.write (that_idx, towrite);
 	    }
 	}
 
 	else {
+	    // TIMING:
 	    if (new_val) {
 		// written out re-encrypted with a new IV
-		_array_io.write (idx, obj);
+		_array_io.write (that_idx, obj);
 	    }
 	}
 
     }
+
+    // we must have read the object in during the above loop
+    assert (the_obj.len() > 0);
 
     _array_io.flush ();
 
@@ -290,25 +352,29 @@ void Array::repermute ()
     // a container for the new permuted array.
     // its IOFilterEncrypt will setup the new keys
     shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_cont + "-p2", false));
-    p2_cont_io->appendFilter (auto_ptr<HostIOFilter> (
-				  new IOFilterEncrypt (
-				      p2_cont_io.get(),
-				      shared_ptr<SymWrapper> (
-					  new SymWrapper (
-					      _prov_fact)))));
+//     p2_cont_io->appendFilter (auto_ptr<HostIOFilter> (
+// 				  new IOFilterEncrypt (
+// 				      p2_cont_io.get(),
+// 				      shared_ptr<SymWrapper> (
+// 					  new SymWrapper (
+// 					      _prov_fact)))));
     
     // copy values across
+    _array_io.flush ();
     for (index_t i=0; i < N; i++) {
 	ByteBuffer obj;
 	_array_io.read (i, obj);
 	p2_cont_io->write (i, obj);
     }
+    p2_cont_io->flush();
 
     // run the re-permutation on the new container
     shared_ptr<ForwardPermutation> reperm (new RePermutation (*_p, *p2));
 
     Shuffler shuffler  (p2_cont_io, reperm, N);
     shuffler.shuffle ();
+
+    p2_cont_io->flush();
     
     // install the new parameters
     _array_io = *p2_cont_io;
@@ -319,7 +385,10 @@ void Array::repermute ()
 }
 
 
-// private
+/// add a new distinct element to T (#_touched_io):  either idx or a random
+/// index (not already in T).
+///
+/// working with physical indices here
 void Array::add_to_touched (index_t idx)
     throw (better_exception)
 {
@@ -349,11 +418,17 @@ void Array::add_to_touched (index_t idx)
     // it.
     index_t rand_idx = _rand_prov->randint (N - _num_retrievals);
 
-    size_t batch = 32;
     index_t T_i;
     bool have_idx = false;
     for (index_t i = 0; i < _num_retrievals; i++) {
 	
+	if (i % _idx_batchsize == 0) {
+	    prefetch_contiguous_from (
+		_touched_io,
+		i,
+		std::min (_idx_batchsize, _num_retrievals - i));
+	}
+
 	T_i = hostio_read_int (_touched_io, i);
 
 	// adjust the rand_idx one higher if this touched index is less than
@@ -367,7 +442,9 @@ void Array::add_to_touched (index_t idx)
 	}
     }
 
-    // and now do the insertion in T
+    // now, the correct rand_idx is ready, and have_idx is known
+    
+    // do the insertion into T
     index_t to_insert = have_idx ? rand_idx : idx;
     
     // holding one value at a time, and reading another one in from the list
@@ -377,6 +454,13 @@ void Array::add_to_touched (index_t idx)
     inhand = to_insert;
     
     for (index_t i = 0; i < _num_retrievals; i++) {
+	
+	if (i % _idx_batchsize == 0) {
+	    prefetch_contiguous_from (
+		_touched_io,
+		i,
+		std::min (_idx_batchsize, _num_retrievals - i));
+	}
 	
 	// read in the next value
 	read_in = hostio_read_int (_touched_io, i);
