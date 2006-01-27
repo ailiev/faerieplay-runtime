@@ -25,7 +25,7 @@ class Array : boost::noncopyable {
 public:
 
     Array (const std::string& name,
-           size_t len, size_t elem_size,
+           const boost::optional <std::pair<size_t, size_t> >& size_params,
            CryptoProviderFactory * crypt_fact);
 
     Array ()
@@ -115,8 +115,8 @@ private:
     /// The encrypted and permuted items
     FlatIO _array_io;
 
-    /// A sorted list of encrypted physical indices which have been touched in
-    /// previous retrievals.
+    /// A sorted list of encrypted physical indices along with the actual items,
+    /// which have been touched in previous retrievals.
     ///
     /// \invariant len (#_touched_io) = #_num_retrievals
     FlatIO _touched_io;

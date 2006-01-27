@@ -53,7 +53,8 @@ int main (int argc, char *argv[])
 #include "array-test-sizes.h"
     
     Array test ("test-array",
-		ARR_ARRAYLEN, ARR_OBJSIZE, prov_fact);
+		Just (std::make_pair ((size_t)ARR_ARRAYLEN, (size_t)ARR_OBJSIZE)),
+		prov_fact);
     
     ifstream cmds ("array-test-cmds.txt");
 //    cmds.exceptions (ios::badbit | ios::failbit);
@@ -91,6 +92,8 @@ int main (int argc, char *argv[])
 #endif // TESTING_ARRAY
 
 
+using boost::optional;
+using boost::none;
 
 
 // instantiate the static array map
@@ -123,34 +126,54 @@ void prefetch_contiguous_from (FlatIO & io,
 // us)
 // does not exist when the Array object is created.
 
+
+/// @param size_params ->first is the array length, ->second is the element
+/// size. boost::none if the array should already exist on the host.
 Array::Array (const string& name,
-	      size_t len, size_t elem_size,
+	      const boost::optional <pair<size_t, size_t> >& size_params,
               CryptoProviderFactory * prov_fact)
     : _name		(name),
       _array_cont	(name + "-array"),
       _touched_cont	(name + "-touched"),
       
-      N			(len),
-      _elem_size	(elem_size),
+      N			(size_params ? size_params->first  : 0),
+      _elem_size	(size_params ? size_params->second : 0),
       
-      _max_retrievals	(lrint (sqrt(float(N))) * lgN_floor(N)),
+//      _max_retrievals	(lrint (sqrt(float(N))) * lgN_floor(N)),
 
       _prov_fact	(prov_fact),
 
-      _array_io		(_array_cont, N),
+      _array_io		(_array_cont,
+			 size_params ? Just(N) : none),
 
-      _touched_io	(_touched_cont, _max_retrievals),
+//      _touched_io	(_touched_cont, _max_retrievals),
       _num_retrievals	(0),
 
       _rand_prov	(_prov_fact->getRandProvider()),
 
-      // init to identity permutation, and then do repermute()
-      _p		(auto_ptr<TwoWayPermutation> (new IdPerm (N))),
+//      _p		(auto_ptr<TwoWayPermutation> (new IdPerm (N))),
+      _idx_batchsize	(64),
 
-      _idx_batchsize	(32),
-
-      _obj_batchsize	(512 / _elem_size)
+      // FIXME: should always be able to use the element size here
+      _obj_batchsize	(size_params		    ?
+			 (16*(1<<10)) / _elem_size  : // use 16KB total
+			 32)
 {
+
+    // if the array exists, get its length, and fill in the length-dependent
+    // params.
+    if (!size_params) {
+	N = _array_io.getLen();
+	// TODO: _elem_size ...
+    }
+
+    _max_retrievals = lrint (sqrt(float(N))) *  lgN_floor(N);
+    // can't assign to an unnamed FlatIO for some reason
+    FlatIO tmp (_touched_cont, Just(_max_retrievals));
+    _touched_io     = tmp;
+    // init to identity permutation, and then do repermute()
+    _p 		    = auto_ptr<TwoWayPermutation> (new IdPerm (N));
+
 
     // need to:
     // - generate a new permutation,
@@ -172,13 +195,15 @@ Array::Array (const string& name,
 				  new SymWrapper
 				  (_prov_fact)))));
 
-    ByteBuffer zero (_elem_size);
-    zero.set (0);
-    for (index_t i=0; i < N; i++) {
-	write_clear (i, zero);
+    // fill out a new array with nulls
+    if (size_params) {
+	ByteBuffer zero (_elem_size);
+	zero.set (0);
+	for (index_t i=0; i < N; i++) {
+	    write_clear (i, zero);
+	}
+	_array_io.flush();
     }
-
-    _array_io.flush();
 
     repermute();
 }
@@ -189,7 +214,9 @@ Array::des_t Array::newArray (const std::string& name,
 			      CryptoProviderFactory * crypt_fact)
     throw (better_exception)
 {
-    shared_ptr<Array> arrptr (new Array (name, len, elem_size, crypt_fact));
+    shared_ptr<Array> arrptr (new Array (name,
+					 Just (std::make_pair (len, elem_size)),
+					 crypt_fact));
 
     des_t idx = _next_array_num++;
 
