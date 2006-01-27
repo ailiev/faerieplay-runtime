@@ -1,5 +1,6 @@
 #include <vector>
 #include <algorithm>
+
 #include <pir/common/exceptions.h>
 
 #include "utils.h"
@@ -47,7 +48,7 @@ void hostio_write_int (FlatIO & io, index_t idx,
 		       int val)
 {
     ByteBuffer buf (&val, sizeof(val),
-		    ByteBuffer::no_free);
+		    ByteBuffer::SHALLOW);
 
     io.write (idx, buf);
 }
@@ -65,3 +66,5 @@ void hostio_write_ints (FlatIO & io,
 	       
     io.write (idxs, objs);
 }
+
+

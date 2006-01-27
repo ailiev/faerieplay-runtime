@@ -117,7 +117,7 @@ void prefetch_contiguous_from (FlatIO & io,
 // array: the encrypted but unpermuted array values. may or may not exists when
 // the Array object is instantiated:
 // - exists if previusly created eg. as part of input processing.
-// - does not exist if eg. doing an InitDynArray gate now
+// - does not exist if eg. doing an gate_t::InitDynArray gate now
 //
 // touched: the elements accessed this session, encrypted and kept sorted (by
 // us)
@@ -137,9 +137,9 @@ Array::Array (const string& name,
 
       _prov_fact	(prov_fact),
 
-      _array_io		(_array_cont, false),
+      _array_io		(_array_cont, N),
 
-      _touched_io	(_touched_cont, false),
+      _touched_io	(_touched_cont, _max_retrievals),
       _num_retrievals	(0),
 
       _rand_prov	(_prov_fact->getRandProvider()),
@@ -158,19 +158,19 @@ Array::Array (const string& name,
     //   IVs)
     // - permute it
 
-//     _array_io.appendFilter (
-// 	auto_ptr<HostIOFilter>
-// 	(new IOFilterEncrypt (&_array_io,
-// 			      shared_ptr<SymWrapper>
-// 			      (new SymWrapper
-// 			       (_prov_fact)))));
+    _array_io.appendFilter (
+	auto_ptr<HostIOFilter>
+	(new IOFilterEncrypt (&_array_io,
+			      shared_ptr<SymWrapper>
+			      (new SymWrapper
+			       (_prov_fact)))));
 
-//     _touched_io.appendFilter (
-// 	auto_ptr<HostIOFilter>
-// 	(new IOFilterEncrypt (&_touched_io,
-// 			      shared_ptr<SymWrapper> (
-// 				  new SymWrapper
-// 				  (_prov_fact)))));
+    _touched_io.appendFilter (
+	auto_ptr<HostIOFilter>
+	(new IOFilterEncrypt (&_touched_io,
+			      shared_ptr<SymWrapper> (
+				  new SymWrapper
+				  (_prov_fact)))));
 
     ByteBuffer zero (_elem_size);
     zero.set (0);
@@ -200,7 +200,16 @@ Array::des_t Array::newArray (const std::string& name,
     return idx;
 }
 
-    
+
+Array & Array::getArray (Array::des_t arr)
+{
+    map_t::iterator arr_i = _arrays.find (arr);
+    if (arr_i == _arrays.end()) {
+	throw bad_arg_exception ("Array::getArray: non-existent array requested");
+    }
+
+    return *(arr_i->second);
+}
 
 
 void Array::write_clear (index_t idx, const ByteBuffer& val)
@@ -351,13 +360,13 @@ void Array::repermute ()
 
     // a container for the new permuted array.
     // its IOFilterEncrypt will setup the new keys
-    shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_cont + "-p2", false));
-//     p2_cont_io->appendFilter (auto_ptr<HostIOFilter> (
-// 				  new IOFilterEncrypt (
-// 				      p2_cont_io.get(),
-// 				      shared_ptr<SymWrapper> (
-// 					  new SymWrapper (
-// 					      _prov_fact)))));
+    shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_cont + "-p2", N));
+    p2_cont_io->appendFilter (auto_ptr<HostIOFilter> (
+				  new IOFilterEncrypt (
+				      p2_cont_io.get(),
+				      shared_ptr<SymWrapper> (
+					  new SymWrapper (
+					      _prov_fact)))));
     
     // copy values across
     _array_io.flush ();
@@ -480,3 +489,34 @@ void Array::add_to_touched (index_t idx)
 
     _touched_io.flush();
 }
+
+
+
+/*
+  Scopes and Select gates:
+
+  Upon hitting an array op at a depth larger than the array's source gate, fork
+  off a copy to work on.
+
+  Then, when a Select for the array comes, the two versions will be distinct.
+  The selection will either iterate through the working areas of both arrays, or
+  the whole storage, if a re-permutation has taken place in the mean time.
+
+  That's it!
+
+  But now: how do I keep the working area separate, so it can develop
+  independently in 2 copies of the array, but be merge-able linearly in the
+  touched set size, not the whole array?
+  - if T is the same size in both branches, no problem to iterate along both
+  _touched_io containers and select the chosen array's accesses.
+  - but if T is different size?
+     - we need to hide which size T is selected, so the result array's T must be
+       the bigger of the two inputs. what if array with the smaller T is
+       selected? seems problematic - subsequent re-fetches could reveal which A
+       was selected. in fact, we need to construct a T which is the
+       *concatenation* of the two input A's Ts. in what order? no matter - the
+       order given in the gate should do.
+     - what if the sum of T's is bigger than _max_retrievals? do a select out of
+       the entire A, and then repermute?
+  - which permutation do we use? the selected array's?
+*/

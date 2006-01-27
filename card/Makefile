@@ -1,5 +1,5 @@
 # !!
-# this makefile needs the ENV variables TOP and TREE pointing into the 4758
+# this makefile needs the env variables TOP and TREE pointing into the 4758
 # linux distribution
 
 include ../header.make
@@ -27,12 +27,9 @@ SRCS=run-circuit.cc enc-circuit.cc $(LIBSRCS)
 # SCC communication headers
 SCC_INCLUDE = $(TOP)/$(TREE)/include
 
-#ifndef NOPENSSL
-LDLIBS += -lssl -lcrypto
-#endif
-
-ifdef NOPENSSL
-CPPFLAGS += -D_NO_OPENSSL
+ifdef HAVE_OPENSSL
+LDLIBS	    += -lssl -lcrypto
+CPPFLAGS    += -DHAVE_OPENSSL
 endif
 
 

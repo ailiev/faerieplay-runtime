@@ -37,7 +37,7 @@
 #include <pir/common/exceptions.h>
 //#include <common/record.h>
 #include <pir/common/sym_crypto.h>
-#ifndef _NO_OPENSSL
+#ifdef HAVE_OPENSSL
 #include <pir/common/openssl_crypto.h>
 #endif
 //#include <pir/common/socket-class.h>
@@ -112,8 +112,8 @@ int main (int argc, char * argv[]) {
     // io_ptr and pass it to IOFilterEncrypt. The shared_ptr would not be ready
     // for the operator* at that point.
     shared_ptr<FlatIO> io (new FlatIO ("permutation-test-ints", false));
-//     io->appendFilter (auto_ptr<HostIOFilter> (
-// 			  new IOFilterEncrypt (io.get(), io_sw)));
+    io->appendFilter (auto_ptr<HostIOFilter> (
+			  new IOFilterEncrypt (io.get(), io_sw)));
 
     for (unsigned i = 0; i < N; i++) {
 	hostio_write_int (*io, i, i);

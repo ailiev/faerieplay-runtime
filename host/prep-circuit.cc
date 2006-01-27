@@ -22,30 +22,27 @@
 using namespace std;
 
 
-int prepare_gates_container (istream & gates_in)
+int prepare_gates_container (istream & gates_in,
+			     const string& cct_name)
     throw (io_exception, std::exception);
-
-void prepare_values_container (int num_gates)
-    throw (io_exception, std::logic_error);
 
 
 void usage (char *argv[]) {
-    cerr << "Usage: " << argv[0] << " <circuit file>" << endl
-	 << "\t[-d <output directory>] default=" << STOREROOT << endl;
-    cerr << endl;
-    cerr << "Produces files:" << endl;
-    cerr << CCT_CONT << ": container with the circuit gates, in text encoding,\n"
-	"\tand ordered topologically." << endl;
-    cerr << GATES_CONT << ": container with the circuit gates, in text encoding,\n"
-	"\tand with gate number g in cont[g]." << endl;
-    cerr << VALUES_CONT << ": container with the circuit values,\n"
+    cerr << "Usage: " << argv[0] << " <circuit file> <circuit name>" << endl
+	 << "\t[-d <output directory>] default=" << STOREROOT << endl
+	 << endl
+	 << "Produces files:" << endl
+	 << CCT_CONT << ": container with the circuit gates, in text encoding,\n"
+	"\tand ordered topologically." << endl
+	 << GATES_CONT << ": container with the circuit gates, in text encoding,\n"
+	"\tand with gate number g in cont[g]." << endl
+	 << VALUES_CONT << ": container with the circuit values,\n"
 	"\tinitially blank except for the inputs" << endl;
 }
 
 
 int main (int argc, char *argv[]) {
 
-    string cct_cont_name = "circuit";
     int num_gates;
 
     string store_root = STOREROOT;
@@ -72,13 +69,19 @@ int main (int argc, char *argv[]) {
     }
 
     ifstream gates_in;
+    string cct_name;
     
-    if (optind < argc) {
-        gates_in.open  (argv[optind]);
+    // need two more params
+    if (optind + 1 >= argc) {
+	usage(argv);
+	exit (EXIT_SUCCESS);
     }
 
-    if (!gates_in || optind >= argc) {
-	usage(argv);
+    gates_in.open  (argv[optind]);
+    cct_name = argv[optind+1];
+
+    if (!gates_in) {
+	cerr << "Failed to open circuit file " << argv[optind] << endl;
 	exit (EXIT_FAILURE);
     }
     
@@ -86,7 +89,7 @@ int main (int argc, char *argv[]) {
     init_objio (store_root);
     
     try {
-	num_gates = prepare_gates_container (gates_in);
+	num_gates = prepare_gates_container (gates_in, cct_name);
     }
     catch (exception & ex) {
 	cerr << "Exception! " << ex.what() << endl;
@@ -99,7 +102,8 @@ int main (int argc, char *argv[]) {
 const int CONTAINER_OBJ_SIZE = 128;
 
 
-int prepare_gates_container (istream & gates_in)
+int prepare_gates_container (istream & gates_in,
+			     const string& cct_name)
     throw (io_exception, std::exception)
 {
 
@@ -109,8 +113,13 @@ int prepare_gates_container (istream & gates_in)
     ostringstream gate;
     vector< pair<int,string> > gates;
 
-    ByteBuffer zeros (8);
+    ByteBuffer zeros (CONTAINER_OBJ_SIZE);
     zeros.set (0);
+
+    string
+	cct_cont    = cct_name + DIRSEP + CCT_CONT,
+	gates_cont  = cct_name + DIRSEP + GATES_CONT,
+	values_cont = cct_name + DIRSEP + VALUES_CONT;
 
 
     while (true) {
@@ -147,28 +156,28 @@ int prepare_gates_container (istream & gates_in)
 	
     clog << "Done reading circuit" << endl;
     
-    init_obj_container (CCT_CONT,
+    init_obj_container (cct_cont,
 			gates.size(),
 			CONTAINER_OBJ_SIZE);
-    init_obj_container (GATES_CONT,
+    init_obj_container (gates_cont,
 			max_gate + 1,
 			CONTAINER_OBJ_SIZE);
-    init_obj_container (VALUES_CONT,
+    init_obj_container (values_cont,
 			max_gate + 1,
 			CONTAINER_OBJ_SIZE);
     
-    clog << "CCT_CONT size=" << gates.size() <<
-	"; GATES_CONT size=" << max_gate + 1 << endl;
+    clog << "cct_cont size=" << gates.size() <<
+	"; gates_cont size=" << max_gate + 1 << endl;
 
     
     int i = 0;
     FOREACH (g, gates) {
 	gate_t gate = unserialize_gate (g->second);
 
-	if (gate.op.kind == Input) {
+	if (gate.op.kind == gate_t::Input) {
 	    // get the input
 	    switch (gate.typ.kind) {
-	    case Scalar:
+	    case gate_t::Scalar:
 	    {
 		int in;
 		
@@ -176,14 +185,14 @@ int prepare_gates_container (istream & gates_in)
 		     << " for gate " << gate.num << ": " << flush;
 		cin >> in;
 		
-		ByteBuffer val (&in, sizeof(in), ByteBuffer::no_free);
+		ByteBuffer val (&in, sizeof(in), ByteBuffer::SHALLOW);
 		
 		clog << "writing " << sizeof(in) << " byte input value" << endl;
-		write_obj (val, VALUES_CONT, gate.num);
+		write_obj (val, values_cont, gate.num);
 	    }
 	    break;
 
-	    case Array:
+	    case gate_t::Array:
 	    {
 		int length	= gate.typ.params[0],
 		    elem_size	= gate.typ.params[1];
@@ -224,8 +233,8 @@ int prepare_gates_container (istream & gates_in)
 		}
 
 		// and write the array pointer into the values table
-		write_obj (ByteBuffer (&arr_ptr, sizeof(arr_ptr), ByteBuffer::no_free),
-			   VALUES_CONT,
+		write_obj (ByteBuffer (&arr_ptr, sizeof(arr_ptr), ByteBuffer::SHALLOW),
+			   values_cont,
 			   gate.num);
 		
 	    } // end case Array:
@@ -233,11 +242,11 @@ int prepare_gates_container (istream & gates_in)
 
 	    } // end switch (gate.typ.kind)
 
-	} // end if (gate.op.kind == Input)
+	} // end if (gate.op.kind == gate_t::Input)
 	else {
 	    // we should enter something into the values container
 	    write_obj (zeros,
-		       VALUES_CONT,
+		       values_cont,
 		       gate.num);
 	}
 	
@@ -245,11 +254,11 @@ int prepare_gates_container (istream & gates_in)
 	ByteBuffer gatestring = ByteBuffer (g->second, ByteBuffer::SHALLOW);
 
 	write_obj (gatestring,
-		   GATES_CONT,
+		   gates_cont,
 		   g->first);
 
 	write_obj (gatestring,
-		   CCT_CONT,
+		   cct_cont,
 		   i++);
     } // end FOREACH (g, gates)
 	

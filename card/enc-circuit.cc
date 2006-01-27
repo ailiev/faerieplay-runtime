@@ -10,15 +10,21 @@
 
 #include <iostream>
 
-#include <pir/card/hostcall.h>
+#include <boost/shared_ptr.hpp>
+
+#include <pir/card/io.h>
+#include <pir/card/io_flat.h>
+//#include <pir/card/hostcall.h>
 #include <pir/card/lib.h>
-#include <pir/card/consts.h>
+//#include <pir/card/consts.h>
 #include <pir/card/4758_sym_crypto.h>
 #include <pir/card/configs.h>
+#include <pir/card/io_filter.h>
+#include <pir/card/io_filter_encrypt.h>
 
 #include <pir/common/comm_types.h>
 #include <pir/common/sym_crypto.h>
-#ifndef _NO_OPENSSL
+#ifdef HAVE_OPENSSL
 #include <pir/common/openssl_crypto.h>
 #endif
 
@@ -30,6 +36,8 @@
 
 
 using namespace std;
+
+using boost::shared_ptr;
 
 
 static void exception_exit (const std::exception& ex, const string& msg) {
@@ -43,7 +51,8 @@ static void exception_exit (const std::exception& ex, const string& msg) {
 static void usage (const char* progname) {
     cerr << "Usage: " << progname << " [-p <card server por>]" << endl
 	 << "\t[-d <crypto dir>]" << endl
-	 << "\t[-c (use 4758 crypto hw?)]" << endl;
+	 << "\t[-c (use 4758 crypto hw?)]" << endl
+	 << "\t<circuit name>" << endl;
 }
 
 
@@ -54,114 +63,67 @@ int main (int argc, char *argv[])
     //    clog.rdbuf(NULL);
 
 
-
-    //
-    // process options
-    //
-
     init_default_configs ();
-    
-
-    int opt;
-    while ((opt = getopt(argc, argv, "p:d:c")) != EOF) {
-	switch (opt) {
-
-	case 'p':
-	    g_configs.host_serv_port = atoi(optarg);
-	    break;
-	    
-	case 'd':		//directory for keys etc
-	    g_configs.crypto_dir = optarg;
-	    break;
-
-	case 'c':
-	    g_configs.use_card_crypt_hw = true;
-	    break;
-
-	default:
-	    usage(argv[0]);
-	    exit (EXIT_SUCCESS);
-	}
+    if ( do_configs (argc, argv) != 0 ) {
+	usage (argv[0]);
+	exit (EXIT_SUCCESS);
     }
 
-#ifdef _NO_OPENSSL
-    if (!g_configs.use_card_crypt_hw) {
-	cerr << "Warning: OpenSSL not compiled in, will try to use 4758 crypto"
-	     << endl;
-	g_configs.use_card_crypt_hw = true;
-    }
-#endif
-
-
-    //
-    // crypto setup
-    //
-    
-    ByteBuffer mac_key (20),	// SHA1 HMAC key
-	enc_key (24);		// TDES key
-
-    // read in the keys
-    // FIXME: this is a little too brittle, with all the names hardwired
-    loadkeys (enc_key, g_configs.crypto_dir + DIRSEP + ENC_KEY_FILE,
-	      mac_key, g_configs.crypto_dir + DIRSEP + MAC_KEY_FILE);
-
-    auto_ptr<CryptoProviderFactory>	provfact;
+    auto_ptr<CryptoProviderFactory> provfact;
 
     try {
-	if (g_configs.use_card_crypt_hw) {
-	    provfact.reset (new CryptProvFactory4758());
-	}
-#ifndef _NO_OPENSSL
-	else {
-	    provfact.reset (new OpenSSLCryptProvFactory());
-	}
-#endif
-	
+	provfact = init_crypt (g_configs);
     }
     catch (const crypto_exception& ex) {
 	exception_exit (ex, "Error making crypto providers");
     }
-
-    SymWrapper symrap (enc_key, mac_key, provfact.get());
 
 
     //
     // and do the work ...
     //
 
+    FlatIO  vals_io (g_configs.cct_name + DIRSEP + VALUES_CONT);
+    FlatIO  cct_io  (g_configs.cct_name + DIRSEP + CCT_CONT);
+
     try {
 	ByteBuffer obj_bytes;
 
-	string conts[] = { CCT_CONT, VALUES_CONT };
+	FlatIO *conts[] = { &vals_io, &cct_io };
 	
 	// go through all the containers
 	for (unsigned c = 0; c < ARRLEN(conts); c++) {
 	    
-	    clog << "*** Working on container " << conts[c] << endl;
+//	    clog << "*** Working on container " << io->getName() << endl;
 	    
-	    size_t num_objs = host_get_cont_len (conts[c]);
+	    FlatIO * io = conts[c];
 	    
-	    // and each object in the container
+	    size_t num_objs = io->getLen();
+	    
+	    // temp container to take encrypted objects
+	    FlatIO temp (io->getName() + "-enc",
+			 num_objs);
+
+	    temp.appendFilter (auto_ptr<HostIOFilter>
+			       (new IOFilterEncrypt (&temp,
+						     shared_ptr<SymWrapper>
+						     (new SymWrapper
+						      (provfact.get())))));
+	    // and transfer each object in the container
 	    for (unsigned i=0; i < num_objs; i++) {
 
-		host_read_blob (conts[c],
-				object_name_t (object_id (i)),
-				obj_bytes);
+		io->read (i, obj_bytes);
 		
-		// skip 0-length objects
-		if (obj_bytes.len() == 0) {
-		    continue;
-		}
-		
-		obj_bytes = symrap.wrap (obj_bytes);
-
 		clog << "Writing " << obj_bytes.len() << " bytes for object " <<
 		    i << endl;
 		
-		host_write_blob (conts[c],
-				 object_name_t (object_id (i)),
-				 obj_bytes);
+		temp.write (i, obj_bytes);
 	    }
+
+	    temp.flush ();
+
+	    // and move encrypted container back to original name.
+	    *io = temp;
 	}
     }
     catch (const std::exception & ex) {

@@ -18,39 +18,39 @@ gate_t::gate_t () :
 {}
     
 
-int do_bin_op (binop_t op, int x, int y) {
+int do_bin_op (gate_t::binop_t op, int x, int y) {
 
     switch (op) {
-    case     Plus:  return x + y;
-    case     Minus: return x - y;
+    case     gate_t::Plus:  return x + y;
+    case     gate_t::Minus: return x - y;
 
 	// NOTE: we need to be able to handle division by zero. producing an
-	// invalid answer is fine, hopefully a subsequent Select will ignore it.
+	// invalid answer is fine, hopefully a subsequent gate_t::Select will ignore it.
 	// TODO: should concoct a "bottom" value, to represent invalid
 	// computation results which should not be used in subsequent
 	// operations.
-    case     Div:   return y != 0 ? x / y : 0;
-    case     Mod:   return y != 0 ? x % y : 0;
-    case     Times: return x * y;
+    case     gate_t::Div:   return y != 0 ? x / y : 0;
+    case     gate_t::Mod:   return y != 0 ? x % y : 0;
+    case     gate_t::Times: return x * y;
 		
-    case     LT:    return x < y;
-    case     GT:    return x > y;
-    case     Eq:    return x == y;
-    case     LTEq:  return x <= y;
-    case     GTEq:  return x >= y;
-    case     NEq:   return x != y;
-    case     SR:   return x >> y;
-    case     SL:   return x << y;
+    case     gate_t::LT:    return x < y;
+    case     gate_t::GT:    return x > y;
+    case     gate_t::Eq:    return x == y;
+    case     gate_t::LTEq:  return x <= y;
+    case     gate_t::GTEq:  return x >= y;
+    case     gate_t::NEq:   return x != y;
+    case     gate_t::SR:   return x >> y;
+    case     gate_t::SL:   return x << y;
     default: cerr << "unknown binop " << op << endl;
     }
      
 }
 
-int do_un_op (unop_t op, int x) {
+int do_un_op (gate_t::unop_t op, int x) {
     switch (op) {
-    case Negate: return -x;
-    case BNot:   return ~x;
-    case LNot:   return !x;
+    case gate_t::Negate: return -x;
+    case gate_t::BNot:   return ~x;
+    case gate_t::LNot:   return !x;
     }
 }
 
@@ -82,7 +82,7 @@ gate_t unserialize_gate (const string& gate)
 	
 	while (line_str >> word) {
 	    if (word == "Output") {
-		answer.flags.push_back (Output);
+		answer.flags.push_back (gate_t::Output);
 	    }
 	}
     }
@@ -96,12 +96,12 @@ gate_t unserialize_gate (const string& gate)
 //	clog << "type line:" << line << endl;
 	line_str >> word;
 	if (word == "array") {
-	    answer.typ.kind = Array;
+	    answer.typ.kind = gate_t::Array;
 	    line_str >> answer.typ.params[0]; // array length
 	    line_str >> answer.typ.params[1]; // size of element type
 	}
 	else if (word == "scalar") {
-	    answer.typ.kind = Scalar;
+	    answer.typ.kind = gate_t::Scalar;
 	}
 	else {
 	    cerr << "Unknown type " << word << endl;
@@ -118,95 +118,95 @@ gate_t unserialize_gate (const string& gate)
 //	clog << "op line:" << line << endl;
 	line_str >> word;
 	if (word == "BinOp") {
-	    answer.op.kind = BinOp;
+	    answer.op.kind = gate_t::BinOp;
 	    line_str >> word;
 	    if (word == "+") {
-		answer.op.params[0] = Plus;
+		answer.op.params[0] = gate_t::Plus;
 	    }
 	    else if (word == "-") {
-		answer.op.params[0] = Minus;
+		answer.op.params[0] = gate_t::Minus;
 	    }
 	    
 	    else if (word == "*") {
-		answer.op.params[0] = Times;
+		answer.op.params[0] = gate_t::Times;
 	    }
 	    else if (word == "/") {
-		answer.op.params[0] = Div;
+		answer.op.params[0] = gate_t::Div;
 	    }
 	    else if (word == "%") {
-		answer.op.params[0] = Mod;
+		answer.op.params[0] = gate_t::Mod;
 	    }
 
 	    else if (word == "<") {
-		answer.op.params[0] = LT;
+		answer.op.params[0] = gate_t::LT;
 	    }
 	    else if (word == ">") {
-		answer.op.params[0] = GT;
+		answer.op.params[0] = gate_t::GT;
 	    }
 	    else if (word == "==") {
-		answer.op.params[0] = Eq;
+		answer.op.params[0] = gate_t::Eq;
 	    }
 	    else if (word == ">=") {
-		answer.op.params[0] = GTEq;
+		answer.op.params[0] = gate_t::GTEq;
 	    }
 	    else if (word == "<=") {
-		answer.op.params[0] = LTEq;
+		answer.op.params[0] = gate_t::LTEq;
 	    }
 	    else if (word == "!=") {
-		answer.op.params[0] = NEq;
+		answer.op.params[0] = gate_t::NEq;
 	    }
 	    else if (word == "<<") {
-		answer.op.params[0] = SL;
+		answer.op.params[0] = gate_t::SL;
 	    }
 	    else if (word == ">>") {
-		answer.op.params[0] = SR;
+		answer.op.params[0] = gate_t::SR;
 	    }
 	    else {
 		cerr << "unknown BinOp " << word << endl;
 	    }
 	}
 	else if (word == "UnOp") {
-	    answer.op.kind = UnOp;
+	    answer.op.kind = gate_t::UnOp;
 	    line_str >> word;
 	    if (word == "-") {
-		answer.op.params[0] = Negate;
+		answer.op.params[0] = gate_t::Negate;
 	    }
 	    else if (word == "!") {
-		answer.op.params[0] = LNot;
+		answer.op.params[0] = gate_t::LNot;
 	    }
 	    else if (word == "~") {
-		answer.op.params[0] = BNot;
+		answer.op.params[0] = gate_t::BNot;
 	    }
 	    else {
 		cerr << "unknown UnOp " << word << endl;
 	    }
 	}
 	else if (word == "Input") {
-	    answer.op.kind = Input;
+	    answer.op.kind = gate_t::Input;
 	}
 	else if (word == "Select") {
-	    answer.op.kind = Select;
+	    answer.op.kind = gate_t::Select;
 	}
 	else if (word == "Lit") {
-	    answer.op.kind = Lit;
+	    answer.op.kind = gate_t::Lit;
 	    line_str >> answer.op.params[0];
 	}
 	else if (word == "ReadDynArray") {
-	    answer.op.kind = ReadDynArray;
+	    answer.op.kind = gate_t::ReadDynArray;
 	}
 	else if (word == "WriteDynArray") {
-	    answer.op.kind = WriteDynArray;
+	    answer.op.kind = gate_t::WriteDynArray;
 	    line_str >> answer.op.params[1]; // offset
 	    line_str >> answer.op.params[2]; // length
 	}
 	else if (word == "Slicer") {
-	    answer.op.kind = Slicer;
+	    answer.op.kind = gate_t::Slicer;
 	    line_str >> answer.op.params[0]; // offset
 	    line_str >> answer.op.params[1]; // length
 	
 	}
 	else if (word == "InitDynArray") {
-	    answer.op.kind = InitDynArray;
+	    answer.op.kind = gate_t::InitDynArray;
 	    line_str >> answer.op.params[0]; // element size
 	    line_str >> answer.op.params[1]; // array length
 	}
@@ -252,46 +252,46 @@ ostream& print_gate (ostream & out, const gate_t & g) {
     out << "num: " << g.num << endl;
 
     switch (g.typ.kind) {
-    case Array:
+    case gate_t::Array:
 	out << "Array " << g.typ.params[0] << " " << g.typ.params[1] << endl;
 	break;
-    case Scalar:
+    case gate_t::Scalar:
 	out << "Scalar" << endl;
 	break;
     }
 
     switch (g.op.kind) {
-    case BinOp:
+    case gate_t::BinOp:
 	out << "BinOp ";
 	switch (g.op.params[0]) {
-	case Plus:
+	case gate_t::Plus:
 	    out << "+" << endl;
 	    break;
-	case Minus:
+	case gate_t::Minus:
 	    out << "-" << endl;
 	    break;
 	    
-	case Times:
+	case gate_t::Times:
 	    out << "*" << endl;
 	    break;
-	case Div:
+	case gate_t::Div:
 	    out << "/" << endl;
 	    break;
-	case Mod:
+	case gate_t::Mod:
 	    out << "%" << endl;
 	    break;
 	    
-	case LT:
+	case gate_t::LT:
 	    out << "<" << endl;
 	    break;
-	case GT:
+	case gate_t::GT:
 	    out << ">" << endl;
 	    break;
 	    
-	case SR:
+	case gate_t::SR:
 	    out << ">>" << endl;
 	    break;
-	case SL:
+	case gate_t::SL:
 	    out << "<<" << endl;
 	    break;
 	    
@@ -301,16 +301,16 @@ ostream& print_gate (ostream & out, const gate_t & g) {
 	}
 	break;
 	
-    case UnOp:
+    case gate_t::UnOp:
 	out << "UnOp ";
 	switch (g.op.params[0]) {
-	case Negate:
+	case gate_t::Negate:
 	    out << "-" << endl;
 	    break;
-	case BNot:
+	case gate_t::BNot:
 	    out << "~" << endl;
 	    break;
-	case LNot:
+	case gate_t::LNot:
 	    out << "!" << endl;
 	    break;
 	    
@@ -320,22 +320,22 @@ ostream& print_gate (ostream & out, const gate_t & g) {
 	}
 	break;
 
-    case ReadDynArray:
+    case gate_t::ReadDynArray:
 	out << "ReadDynArray" << endl;
 	break;
-    case WriteDynArray:
+    case gate_t::WriteDynArray:
 	out << "WriteDynArray" << endl;
 	break;
-    case Input:
+    case gate_t::Input:
 	out << "Input" << endl;
 	break;
-    case Select:
+    case gate_t::Select:
 	out << "Select" << endl;
 	break;
-    case Slicer:
+    case gate_t::Slicer:
 	out << "Slicer" << endl;
 	break;
-    case Lit:
+    case gate_t::Lit:
 	out << "Lit" << endl;
 	break;
 
@@ -350,7 +350,7 @@ ostream& print_gate (ostream & out, const gate_t & g) {
 
     out << "flags: ";
     copy (g.flags.begin(), g.flags.end(),
-	  ostream_iterator<gate_flag_t> (out, " "));
+	  ostream_iterator<gate_t::gate_flag_t> (out, " "));
     out << endl;
 
     out << "comm: ";

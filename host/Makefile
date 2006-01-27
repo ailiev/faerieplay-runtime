@@ -10,7 +10,7 @@ SRCS=prep-circuit.cc
 DESTDIR=$(LEEDS_BIN)
 
 # no space problem on the host usually
-CFLAGS += -g
+#CFLAGS += -g
 
 LIBDIRS = $(PIR)/common ../common
 LDLIBFILES=-lsfdl-common -lcommon -lboost_filesystem
