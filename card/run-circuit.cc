@@ -35,8 +35,6 @@
 
 using namespace std;
 
-using boost::shared_ptr;
-
 
 auto_ptr<CryptoProviderFactory> g_provfact;
 
@@ -111,11 +109,18 @@ int main (int argc, char *argv[]) {
 //
 
 
+using boost::shared_ptr;
+
+using boost::optional;
+using boost::none;
+
+
+
 CircuitEval::CircuitEval (const std::string& cctname,
 			  CryptoProviderFactory * fact)
     // tell the HostIO to not use a write cache (size 0)
-    : _cct_io	(cctname + DIRSEP + CCT_CONT, boost::none, 0U),
-      _vals_io	(cctname + DIRSEP + VALUES_CONT, boost::none, 0U)
+    : _cct_io	(cctname + DIRSEP + CCT_CONT, none, 0U),
+      _vals_io	(cctname + DIRSEP + VALUES_CONT, none, 0U)
 {
     // NOTE: how are the keys set up? _vals_io calls initExisting() on the
     // filter, which then reads in the container keys using its master pointer
@@ -281,8 +286,15 @@ void CircuitEval::do_gate (const gate_t& g)
 	gate_t arr_gate;
 	read_gate (arr_gate, arr_gate_num);
 
-	do_write_array (arr_ptr, idx, off, len, ins,
+	do_write_array (arr_ptr,
+			off,
+			len >= 0 ? Just((size_t)len) : none,			
+			idx,
+			ins,
 			arr_gate.depth, g.depth);
+
+	// return the array pointer
+	res_bytes = arr_ptr;
     }
     break;
 
@@ -405,15 +417,19 @@ ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
 
 
 void CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
-				  int off, int len,
-				  int idx,
+				  size_t off,
+				  optional<size_t> len,
+				  index_t idx,
 				  const ByteBuffer& new_val,
 				  int prev_depth, int this_depth)
     
 {
     Array::des_t arr_ptr;
 
-    assert (len == new_val.len());
+    if (len)
+    {
+	assert (*len == new_val.len());
+    }
     
     assert (arr_ptr_buf.len() == sizeof(arr_ptr));
     memcpy (&arr_ptr, arr_ptr_buf.data(), sizeof(arr_ptr));

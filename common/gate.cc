@@ -13,8 +13,9 @@
 using namespace std;
 
 
-gate_t::gate_t () :
-    inputs (2)
+gate_t::gate_t ()
+    // can't have this if we just use push_back to add inputs.
+//   : inputs (2)
 {}
     
 
@@ -196,8 +197,8 @@ gate_t unserialize_gate (const string& gate)
 	}
 	else if (word == "WriteDynArray") {
 	    answer.op.kind = gate_t::WriteDynArray;
-	    line_str >> answer.op.params[1]; // offset
-	    line_str >> answer.op.params[2]; // length
+	    line_str >> answer.op.params[0]; // offset
+	    line_str >> answer.op.params[1]; // length
 	}
 	else if (word == "Slicer") {
 	    answer.op.kind = gate_t::Slicer;
