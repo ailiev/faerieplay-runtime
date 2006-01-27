@@ -8,6 +8,9 @@
 #include <sstream>
 #include <fstream>
 
+#include <boost/optional/optional.hpp>
+#include <boost/none.hpp>
+
 #include <math.h>
 
 #include <pir/card/io.h>
@@ -84,16 +87,16 @@ int main (int argc, char *argv[]) {
 	exit (EXIT_SUCCESS);
     }
 
-    try {
+//    try {
 	g_provfact = init_crypt (g_configs);
 
 	CircuitEval evaluator (g_configs.cct_name, g_provfact.get());
 	evaluator.eval ();
-    }
-    catch (const std::exception & ex) {
-	cerr << "Exception: " << ex.what() << endl;
-	exit (EXIT_FAILURE);
-    }
+//     }
+//     catch (const std::exception & ex) {
+// 	cerr << "Exception: " << ex.what() << endl;
+// 	exit (EXIT_FAILURE);
+//     }
     
 }
 
@@ -110,8 +113,9 @@ int main (int argc, char *argv[]) {
 
 CircuitEval::CircuitEval (const std::string& cctname,
 			  CryptoProviderFactory * fact)
-    : _cct_io	(cctname + DIRSEP + CCT_CONT),
-      _vals_io	(cctname + DIRSEP + VALUES_CONT)
+    // tell the HostIO to not use a write cache (size 0)
+    : _cct_io	(cctname + DIRSEP + CCT_CONT, boost::none, 0U),
+      _vals_io	(cctname + DIRSEP + VALUES_CONT, boost::none, 0U)
 {
     // NOTE: how are the keys set up? _vals_io calls initExisting() on the
     // filter, which then reads in the container keys using its master pointer

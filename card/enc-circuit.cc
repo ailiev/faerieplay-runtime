@@ -11,6 +11,9 @@
 #include <iostream>
 
 #include <boost/shared_ptr.hpp>
+#include <boost/optional/optional.hpp>
+#include <boost/none.hpp>
+
 
 #include <pir/card/io.h>
 #include <pir/card/io_flat.h>
@@ -83,8 +86,8 @@ int main (int argc, char *argv[])
     // and do the work ...
     //
 
-    FlatIO  vals_io (g_configs.cct_name + DIRSEP + VALUES_CONT);
-    FlatIO  cct_io  (g_configs.cct_name + DIRSEP + CCT_CONT);
+    FlatIO  vals_io (g_configs.cct_name + DIRSEP + VALUES_CONT, boost::none);
+    FlatIO  cct_io  (g_configs.cct_name + DIRSEP + CCT_CONT, boost::none);
 
     try {
 	ByteBuffer obj_bytes;
