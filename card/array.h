@@ -86,9 +86,9 @@ private:
 	boost::optional < std::pair<size_t, ByteBuffer> > new_val)
 	throw (better_exception);
 
-    /// add a new distinct element to T (#_touched_io):  either idx or a random
-    /// index (not already in T)
-    void add_to_touched (index_t idx)
+    /// append a new distinct index (+ object at that index) to W (_workarea):
+    /// either idx or a random index (not already in W)
+    void append_new_working_item (index_t idx)
 	throw (better_exception);
     
 
@@ -115,11 +115,15 @@ private:
     /// The encrypted and permuted items
     FlatIO _array_io;
 
+    struct WorkArea {
+	FlatIO idxs, items;
+    };
+    
     /// A sorted list of encrypted physical indices along with the actual items,
     /// which have been touched in previous retrievals.
     ///
     /// \invariant len (#_touched_io) = #_num_retrievals
-    FlatIO _touched_io;
+    WorkArea _workarea;
 
     /// how many retrievals already done this session?
     size_t              _num_retrievals;

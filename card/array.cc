@@ -112,8 +112,12 @@ void prefetch_contiguous_from (FlatIO & io,
     io.prefetch (l);
 }
 
-    
 
+namespace {
+    const string ARRAY_NAME = "-array",
+	IDXS_NAME = "-working-idxs",
+	OBJS_NAME = "-working-objs";
+}
 
 // Containers used:
 // 
@@ -133,8 +137,8 @@ Array::Array (const string& name,
 	      const boost::optional <pair<size_t, size_t> >& size_params,
               CryptoProviderFactory * prov_fact)
     : _name		(name),
-      _array_cont	(name + "-array"),
-      _touched_cont	(name + "-touched"),
+      _array_cont	(name + ARRAY_NAME),
+//      _workarea_idxs_name	(name + "-touched"),
       
       N			(size_params ? size_params->first  : 0),
       _elem_size	(size_params ? size_params->second : 0),
@@ -168,9 +172,13 @@ Array::Array (const string& name,
     }
 
     _max_retrievals = lrint (sqrt(float(N))) *  lgN_floor(N);
+
     // can't assign to an unnamed FlatIO for some reason
-    FlatIO tmp (_touched_cont, Just(_max_retrievals));
-    _touched_io     = tmp;
+    FlatIO tmp_idxs (_name + IDXS_NAME, Just(_max_retrievals));
+    FlatIO tmp_objs (_name + OBJS_NAME, Just(_max_retrievals));
+    _workarea.idxs = tmp_idxs;
+    _workarea.items = tmp_objs;
+    
     // init to identity permutation, and then do repermute()
     _p 		    = auto_ptr<TwoWayPermutation> (new IdPerm (N));
 
@@ -181,19 +189,14 @@ Array::Array (const string& name,
     //   IVs)
     // - permute it
 
-    _array_io.appendFilter (
-	auto_ptr<HostIOFilter>
-	(new IOFilterEncrypt (&_array_io,
-			      shared_ptr<SymWrapper>
-			      (new SymWrapper
-			       (_prov_fact)))));
-
-    _touched_io.appendFilter (
-	auto_ptr<HostIOFilter>
-	(new IOFilterEncrypt (&_touched_io,
-			      shared_ptr<SymWrapper> (
-				  new SymWrapper
-				  (_prov_fact)))));
+    FlatIO * ios [] = { &_array_io, &_workarea.idxs, &_workarea.items };
+    for (unsigned i=0; i < ARRLEN(ios); i++) {
+	ios[i]->appendFilter (
+	    auto_ptr<HostIOFilter>
+	    (new IOFilterEncrypt (ios[i],
+				  shared_ptr<SymWrapper>
+				  (new SymWrapper (_prov_fact)))));
+    }
 
     // fill out a new array with nulls
     if (size_params) {
@@ -222,6 +225,7 @@ Array::des_t Array::newArray (const std::string& name,
 
     // there should be no entry with idx
     assert (_arrays.find(idx) == _arrays.end() );
+    
     _arrays[idx] = arrptr;
 
     return idx;
@@ -268,7 +272,7 @@ ByteBuffer Array::read (index_t idx)
 //     return obj;
     
     
-    add_to_touched (p_idx);
+    append_new_working_item (p_idx);
 
     ByteBuffer buf = do_dummy_fetches (p_idx, boost::none);
 
@@ -294,7 +298,7 @@ void Array::write (index_t idx, size_t off,
 //     }
 //     return;
     
-    add_to_touched (p_idx);
+    append_new_working_item (p_idx);
 
     
     do_dummy_fetches (p_idx,
@@ -323,22 +327,13 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
     
     unsigned that_idx = 0;
 
-#ifndef NDEBUG
-    unsigned that_idx_prev = 0;
-#endif
-    
-    // go through all the _touched_io indices, and read the corresponding ones
-    // in _array_io. One of them must be the one we need (idx)
+    // go through all the _workarea indices and objects. if we have new_val,
+    // re-write every item (not index); otherwise just read and keep the one
+    // numbered idx, which should be there after append_new_working_item()
     for (index_t i = 0; i < _num_retrievals; i++) {
 
-	that_idx = hostio_read_int (_touched_io, i);
-
-#ifndef NDEBUG
-	assert (that_idx >= that_idx_prev);
-	that_idx_prev = that_idx;
-#endif
-	
-	_array_io.read (that_idx, obj);
+	that_idx = hostio_read_int (_workarea.idxs, i);
+	_workarea.items.read (i, obj);
 
 	if (that_idx == idx) {
 	    the_obj = ByteBuffer (obj, ByteBuffer::DEEPCOPY);
@@ -348,7 +343,7 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
 		
 		ByteBuffer towrite = new_val->second;
 		// FIXME: ignoring the offset (new_val->first) for now
-		_array_io.write (that_idx, towrite);
+		_workarea.items.write (i, towrite);
 	    }
 	}
 
@@ -356,16 +351,17 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
 	    // TIMING:
 	    if (new_val) {
 		// written out re-encrypted with a new IV
-		_array_io.write (that_idx, obj);
+		_workarea.items.write (i, obj);
 	    }
 	}
 
     }
 
+    _workarea.idxs.flush ();
+    _workarea.items.flush ();
+
     // we must have read the object in during the above loop
     assert (the_obj.len() > 0);
-
-    _array_io.flush ();
 
     return the_obj;
 }
@@ -380,6 +376,21 @@ void Array::repermute ()
     //  - 
 
 
+    {
+	// copy values out of the working area and into the main array
+	index_t idx;
+	ByteBuffer obj;
+	for (index_t i=0; i < _num_retrievals; i++)
+	{
+	    idx = hostio_read_int (_workarea.idxs, i);
+	    _workarea.items.read (i, obj);
+
+	    _array_io.write (idx, obj);
+	}
+
+	_array_io.flush();
+    }
+	
     // the new permutation
     auto_ptr<TwoWayPermutation> p2 (new LRPermutation (
 					lgN_ceil(N), 7, _prov_fact));
@@ -387,23 +398,24 @@ void Array::repermute ()
 
     // a container for the new permuted array.
     // its IOFilterEncrypt will setup the new keys
-    shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_cont + "-p2", N));
-    p2_cont_io->appendFilter (auto_ptr<HostIOFilter> (
-				  new IOFilterEncrypt (
-				      p2_cont_io.get(),
-				      shared_ptr<SymWrapper> (
-					  new SymWrapper (
-					      _prov_fact)))));
+    shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_io.getName() + "-p2", N));
+    p2_cont_io->appendFilter (
+	auto_ptr<HostIOFilter> (
+	    new IOFilterEncrypt (
+		p2_cont_io.get(),
+		shared_ptr<SymWrapper> (new SymWrapper (_prov_fact)))));
     
     // copy values across
-    _array_io.flush ();
-    for (index_t i=0; i < N; i++) {
+//    _array_io.flush ();
+    {
 	ByteBuffer obj;
-	_array_io.read (i, obj);
-	p2_cont_io->write (i, obj);
+	for (index_t i=0; i < N; i++) {
+	    _array_io.read (i, obj);
+	    p2_cont_io->write (i, obj);
+	}
+	p2_cont_io->flush();
     }
-    p2_cont_io->flush();
-
+    
     // run the re-permutation on the new container
     shared_ptr<ForwardPermutation> reperm (new RePermutation (*_p, *p2));
 
@@ -425,7 +437,7 @@ void Array::repermute ()
 /// index (not already in T).
 ///
 /// working with physical indices here
-void Array::add_to_touched (index_t idx)
+void Array::append_new_working_item (index_t idx)
     throw (better_exception)
 {
 
@@ -460,12 +472,12 @@ void Array::add_to_touched (index_t idx)
 	
 	if (i % _idx_batchsize == 0) {
 	    prefetch_contiguous_from (
-		_touched_io,
+		_workarea.idxs,
 		i,
 		std::min (_idx_batchsize, _num_retrievals - i));
 	}
 
-	T_i = hostio_read_int (_touched_io, i);
+	T_i = hostio_read_int (_workarea.idxs, i);
 
 	// adjust the rand_idx one higher if this touched index is less than
 	// it
@@ -480,41 +492,20 @@ void Array::add_to_touched (index_t idx)
 
     // now, the correct rand_idx is ready, and have_idx is known
     
-    // do the insertion into T
-    index_t to_insert = have_idx ? rand_idx : idx;
-    
-    // holding one value at a time, and reading another one in from the list
-    index_t inhand, read_in;
+    index_t to_append = have_idx ? rand_idx : idx;
 
-    // start with the new value in hand
-    inhand = to_insert;
-    
-    for (index_t i = 0; i < _num_retrievals; i++) {
-	
-	if (i % _idx_batchsize == 0) {
-	    prefetch_contiguous_from (
-		_touched_io,
-		i,
-		std::min (_idx_batchsize, _num_retrievals - i));
-	}
-	
-	// read in the next value
-	read_in = hostio_read_int (_touched_io, i);
+    // grab the object at to_append and append it and to_append to _workarea
 
-	// write out the smaller of the two values
-	hostio_write_int (_touched_io, i, min (inhand, read_in));
+    ByteBuffer obj;
+    _array_io.read (to_append, obj);
 
-	// and keep the bigger for next loop
-	inhand = max (inhand, read_in);
-    }
+    hostio_write_int (_workarea.idxs, _num_retrievals, to_append);
+    _workarea.idxs.flush();
+    _workarea.items.write (_num_retrievals, obj);
+    _workarea.items.flush();
 
-    // the largest element
-    hostio_write_int (_touched_io, _num_retrievals, inhand);
-
-    // maintain invariant on the _touched_io and _num_retrievals
+    // maintain invariant on the _workarea and _num_retrievals
     _num_retrievals++;
-
-    _touched_io.flush();
 }
 
 
