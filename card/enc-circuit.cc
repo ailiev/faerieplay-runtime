@@ -17,19 +17,13 @@
 
 #include <pir/card/io.h>
 #include <pir/card/io_flat.h>
-//#include <pir/card/hostcall.h>
 #include <pir/card/lib.h>
-//#include <pir/card/consts.h>
-#include <pir/card/4758_sym_crypto.h>
 #include <pir/card/configs.h>
 #include <pir/card/io_filter.h>
 #include <pir/card/io_filter_encrypt.h>
 
 #include <pir/common/comm_types.h>
 #include <pir/common/sym_crypto.h>
-#ifdef HAVE_OPENSSL
-#include <pir/common/openssl_crypto.h>
-#endif
 
 
 #include <common/gate.h>

@@ -36,8 +36,8 @@ using std::max;
 #ifdef TESTING_ARRAY
 
 #include <fstream>
+#include "pir/card/configs.h"
 
-#include <pir/common/openssl_crypto.h>
 
 using namespace std;
 
@@ -46,15 +46,19 @@ int main (int argc, char *argv[])
     // create an array, fill it in with provided data from a text file, then run
     // reads/updates from another text file
 
-    clog << "Start array test run @ " << epoch_time << endl;
+    init_default_configs ();
+    g_configs.cryptprov = configs::CryptAny;
+    
+    do_configs (argc, argv);
 
-    CryptoProviderFactory * prov_fact = new OpenSSLCryptProvFactory ();
+    auto_ptr<CryptoProviderFactory> prov_fact = init_crypt (g_configs);
+
     
 #include "array-test-sizes.h"
     
     Array test ("test-array",
 		Just (std::make_pair ((size_t)ARR_ARRAYLEN, (size_t)ARR_OBJSIZE)),
-		prov_fact);
+		prov_fact.get());
     
     ifstream cmds ("array-test-cmds.txt");
 //    cmds.exceptions (ios::badbit | ios::failbit);

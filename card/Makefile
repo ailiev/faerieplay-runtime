@@ -50,7 +50,7 @@ LIBOBJS=$(LIBSRCS:.cc=.o)
 LIBDIRS = $(LEEDS_LIB) ../common
 LDLIBFILES = -lcard -lsfdl-common -lcommon
 vpath %.so $(LIBDIRS)
-
+vpath %.a $(LIBDIRS)
 
 # the commands and all for run-circuit and enc-circuit are identical!
 CCT_FLAGS=-I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)

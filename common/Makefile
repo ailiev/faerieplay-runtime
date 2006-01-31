@@ -6,14 +6,19 @@ LIBS=libsfdl-common.$(LIBEXT)
 
 TARGETS=$(LIBS)
 
-SRCS=misc.cc gate.cc
+LIBSRCS=misc.cc gate.cc
+SRCS=$(LIBSRCS)
 
 all: build
 
 build: $(LIBS)
 
-$(LIBS): $(OBJS)
+libsfdl-common.so: $(LIBOBJS)
+	$(CXXLINK)
+
+libsfdl-common.a: $(LIBOBJS)
 	ar -ru $@ $^
+
 
 install: build
 	install $(LIBS) $(LEEDS_LIB)

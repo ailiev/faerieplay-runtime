@@ -29,28 +29,14 @@
 
 #include <boost/shared_ptr.hpp>
 
-#include <unistd.h>		// for getopt()
-#include <time.h>		// for time()
 #include <signal.h>		// for SIGTRAP
 
 
 #include <pir/common/exceptions.h>
-//#include <common/record.h>
 #include <pir/common/sym_crypto.h>
-#ifdef HAVE_OPENSSL
-#include <pir/common/openssl_crypto.h>
-#endif
-//#include <pir/common/socket-class.h>
-//#include <common/scc-socket.h>
-//#include <common/consts.h>
-
 
 #include <pir/card/lib.h>
-// #include "hostcall.h"
-// #include "consts.h"
-// #include "batcher-permute.h"
-// #include "4758_sym_crypto.h"
-// #include "io.h"
+#include <pir/card/configs.h>
 
 #include "utils.h"
 #include "batcher-network.h"
@@ -83,19 +69,6 @@ void out_of_memory () {
 }
 
 
-static void
-usage(const char* progname)
-{
-    fprintf(stderr,
-	    "Usage: %s\n"
-	    "[-p <card server port>]\n"
-	    "[-d <root dir for keys etc.>]\n"
-	    "[-c (means use 4758 crypto hardware instead of OpenSSL)]\n"
-	    "[-r <retriever card number>]\n",
-	    progname);
-    exit(EXIT_FAILURE);
-}
-
 
 int main (int argc, char * argv[]) {
 
@@ -103,15 +76,24 @@ int main (int argc, char * argv[]) {
     // test: construct a container, encrypt it, permute it, and read
     // out the values
 
-    CryptoProviderFactory * prov_fact = new OpenSSLCryptProvFactory ();
+    init_default_configs ();
+    g_configs.cryptprov = configs::CryptAny;
+    
+    if ( do_configs (argc, argv) != 0 ) {
+	configs_usage (cerr, argv[0]);
+	exit (EXIT_SUCCESS);
+    }
+
+    auto_ptr<CryptoProviderFactory> prov_fact = init_crypt (g_configs);
+
     size_t N = 64;
 
-    shared_ptr<SymWrapper>   io_sw (new SymWrapper (prov_fact));
+    shared_ptr<SymWrapper>   io_sw (new SymWrapper (prov_fact.get()));
 
     // split up the creation of io_ptr and its shared_ptr, so that we can deref
     // io_ptr and pass it to IOFilterEncrypt. The shared_ptr would not be ready
     // for the operator* at that point.
-    shared_ptr<FlatIO> io (new FlatIO ("permutation-test-ints", false));
+    shared_ptr<FlatIO> io (new FlatIO ("permutation-test-ints", N));
     io->appendFilter (auto_ptr<HostIOFilter> (
 			  new IOFilterEncrypt (io.get(), io_sw)));
 
@@ -121,7 +103,7 @@ int main (int argc, char * argv[]) {
     io->flush ();
     
     shared_ptr<TwoWayPermutation> pi (
-	new LRPermutation (lgN_ceil (N), 7, prov_fact) );
+	new LRPermutation (lgN_ceil (N), 7, prov_fact.get()) );
     pi->randomize ();
 
     cout << "The permutation's mapping:" << endl;
