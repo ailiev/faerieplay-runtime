@@ -94,7 +94,8 @@ int main (int argc, char * argv[]) {
     // split up the creation of io_ptr and its shared_ptr, so that we can deref
     // io_ptr and pass it to IOFilterEncrypt. The shared_ptr would not be ready
     // for the operator* at that point.
-    shared_ptr<FlatIO> io (new FlatIO ("permutation-test-ints", N));
+    shared_ptr<FlatIO> io (new FlatIO ("permutation-test-ints",
+				       make_pair (N, sizeof(int))));
     io->appendFilter (auto_ptr<HostIOFilter> (
 			  new IOFilterEncrypt (io.get(), io_sw)));
 

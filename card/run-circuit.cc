@@ -156,10 +156,9 @@ void CircuitEval::eval ()
 
 	read_gate (gate, i);
 
-	print_gate (clog, gate);
+	LOG (Log::DEBUG, s_log_id, gate);
 
 	do_gate (gate);
-
     }
 }    
 
@@ -359,8 +358,7 @@ void CircuitEval::do_gate (const gate_t& g)
 	int intval;
 	assert (res_bytes.len() == sizeof(intval));
 	memcpy (&intval, res_bytes.data(), sizeof(intval));
-	LOG (Log::DEBUG, s_log_id,
-	     "Output " << g.comment << ": " << intval << endl);
+	cout << "Output " << g.comment << ": " << intval << endl;
     }
 }
 

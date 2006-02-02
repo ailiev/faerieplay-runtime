@@ -122,6 +122,20 @@ void prefetch_contiguous_from (FlatIO & io,
     io.prefetch (l);
 }
 
+void standard_prefetch (FlatIO & io,
+			index_t i,
+			size_t batch_size,
+			size_t total)
+    throw (better_exception)
+{
+    if (i % batch_size == 0) {
+	prefetch_contiguous_from (
+	    io,
+	    i,
+	    std::min (batch_size, total - i));
+    }
+}
+
 
 namespace {
     const string ARRAY_NAME = "-array",
@@ -157,10 +171,8 @@ Array::Array (const string& name,
 
       _prov_fact	(prov_fact),
 
-      _array_io		(_array_cont,
-			 size_params ? Just(N) : none),
+      _array_io		(_array_cont, size_params),
 
-//      _touched_io	(_touched_cont, _max_retrievals),
       _num_retrievals	(0),
 
       _rand_prov	(_prov_fact->getRandProvider()),
@@ -168,24 +180,26 @@ Array::Array (const string& name,
 //      _p		(auto_ptr<TwoWayPermutation> (new IdPerm (N))),
       _idx_batchsize	(64),
 
-      // FIXME: should always be able to use the element size here
-      _obj_batchsize	(size_params		    ?
+      _obj_batchsize	(size_params ?
 			 (16*(1<<10)) / _elem_size  : // use 16KB total
 			 32)
 {
 
-    // if the array exists, get its length, and fill in the length-dependent
+    // if the array exists, get its sizes, and fill in the size-dependent
     // params.
     if (!size_params) {
-	N = _array_io.getLen();
-	// TODO: _elem_size ...
+	N 	   = _array_io.getLen();
+	_elem_size = _array_io.getElemSize();
     }
 
     _max_retrievals = lrint (sqrt(float(N))) *  lgN_floor(N);
 
-    // can't assign to an unnamed FlatIO for some reason
-    FlatIO tmp_idxs (_name + IDXS_NAME, Just(_max_retrievals));
-    FlatIO tmp_objs (_name + OBJS_NAME, Just(_max_retrievals));
+    // set up the working area, with a list of indices and objects
+    // can't assign from a temporary unnamed FlatIO for some reason
+    FlatIO tmp_idxs (_name + IDXS_NAME,
+		     Just(std::make_pair (_max_retrievals, sizeof(size_t))));
+    FlatIO tmp_objs (_name + OBJS_NAME,
+		     Just(std::make_pair (_max_retrievals, _elem_size)));
     _workarea.idxs = tmp_idxs;
     _workarea.items = tmp_objs;
     
@@ -209,14 +223,13 @@ Array::Array (const string& name,
     }
 
     // fill out a new array with nulls
-    if (size_params) {
-	ByteBuffer zero (_elem_size);
-	zero.set (0);
-	for (index_t i=0; i < N; i++) {
-	    write_clear (i, zero);
-	}
-	_array_io.flush();
+    ByteBuffer zero (_elem_size);
+    zero.set (0);
+    for (index_t i=0; i < N; i++) {
+	write_clear (i, zero);
     }
+    _array_io.flush();
+
 
     repermute();
 }
@@ -350,6 +363,8 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
 	    if (new_val) {
 		// all sizes need to be the same! caller should ensure this
 		assert (new_val->second.len() == _elem_size);
+		// may not have _elem_size for now!
+//		assert (new_val->second.len() == the_obj.len());
 		
 		ByteBuffer towrite = new_val->second;
 		// FIXME: ignoring the offset (new_val->first) for now
@@ -392,6 +407,8 @@ void Array::repermute ()
 	ByteBuffer obj;
 	for (index_t i=0; i < _num_retrievals; i++)
 	{
+	    standard_prefetch_touched (i, true, true);
+
 	    idx = hostio_read_int (_workarea.idxs, i);
 	    _workarea.items.read (i, obj);
 
@@ -408,7 +425,8 @@ void Array::repermute ()
 
     // a container for the new permuted array.
     // its IOFilterEncrypt will setup the new keys
-    shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_io.getName() + "-p2", N));
+    shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_io.getName() + "-p2",
+					       std::make_pair (N, _elem_size)));
     p2_cont_io->appendFilter (
 	auto_ptr<HostIOFilter> (
 	    new IOFilterEncrypt (
@@ -416,10 +434,14 @@ void Array::repermute ()
 		shared_ptr<SymWrapper> (new SymWrapper (_prov_fact)))));
     
     // copy values across
-//    _array_io.flush ();
     {
 	ByteBuffer obj;
 	for (index_t i=0; i < N; i++) {
+	    standard_prefetch (_array_io,
+			       i,
+			       _obj_batchsize,
+			       N);
+	    
 	    _array_io.read (i, obj);
 	    p2_cont_io->write (i, obj);
 	}
@@ -480,12 +502,7 @@ void Array::append_new_working_item (index_t idx)
     bool have_idx = false;
     for (index_t i = 0; i < _num_retrievals; i++) {
 	
-	if (i % _idx_batchsize == 0) {
-	    prefetch_contiguous_from (
-		_workarea.idxs,
-		i,
-		std::min (_idx_batchsize, _num_retrievals - i));
-	}
+	standard_prefetch_touched (i, true, false);
 
 	T_i = hostio_read_int (_workarea.idxs, i);
 
@@ -518,6 +535,24 @@ void Array::append_new_working_item (index_t idx)
     _num_retrievals++;
 }
 
+
+void Array::standard_prefetch_touched (index_t i,
+				       bool do_idxs, bool do_objs)
+    throw (better_exception)
+{
+    if (do_idxs) {
+	standard_prefetch (_workarea.idxs,
+			   i,
+			   _idx_batchsize,
+			   _num_retrievals);
+    }
+    if (do_objs) {
+	standard_prefetch (_workarea.items,
+			   i,
+			   _obj_batchsize,
+			   _num_retrievals);
+    }
+}
 
 
 /*

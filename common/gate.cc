@@ -249,7 +249,8 @@ gate_t unserialize_gate (const string& gate)
 }
 
 
-ostream& print_gate (ostream & out, const gate_t & g) {
+ostream& operator<< (ostream & out, const gate_t & g) {
+
     out << "num: " << g.num << endl;
 
     switch (g.typ.kind) {

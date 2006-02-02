@@ -104,7 +104,7 @@ gate_t unserialize_gate (const std::string& gate)
     throw (io_exception);
 
 
-std::ostream& print_gate (std::ostream & out, const gate_t & g);
+std::ostream& operator<< (std::ostream & out, const gate_t & g);
 
 
 #endif // _GATE_H

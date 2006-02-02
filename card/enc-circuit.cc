@@ -105,7 +105,7 @@ int main (int argc, char *argv[])
 	    
 	    // temp container to take encrypted objects
 	    FlatIO temp (io->getName() + "-enc",
-			 num_objs);
+			 make_pair (io->getLen(), io->getElemSize()));
 
 	    temp.appendFilter (auto_ptr<HostIOFilter>
 			       (new IOFilterEncrypt (&temp,
@@ -117,7 +117,8 @@ int main (int argc, char *argv[])
 
 		io->read (i, obj_bytes);
 		
-		LOG (s_log_id, "Writing "
+		LOG (Log::DEBUG, s_log_id,
+		     "Writing "
 		     << obj_bytes.len() << " bytes for object " << i);
 		
 		temp.write (i, obj_bytes);
