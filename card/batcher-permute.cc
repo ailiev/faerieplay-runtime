@@ -32,6 +32,7 @@
 #include <signal.h>		// for SIGTRAP
 
 
+#include <pir/common/logging.h>
 #include <pir/common/exceptions.h>
 #include <pir/common/sym_crypto.h>
 
@@ -127,6 +128,12 @@ int main (int argc, char * argv[]) {
 //const size_t Shuffler::TAGSIZE = 4;
 
 
+
+namespace {
+    unsigned s_log_id = Log::add_module ("batcher-permute");
+}
+
+
 Shuffler::Shuffler (shared_ptr<FlatIO> container,
 		    shared_ptr<ForwardPermutation> p,
 		    size_t N)
@@ -143,13 +150,15 @@ Shuffler::Shuffler (shared_ptr<FlatIO> container,
 void Shuffler::shuffle ()
     throw (hostio_exception, crypto_exception, runtime_exception)
 {
-    clog << "Start preparing DB @ " << epoch_time << endl;
+    LOG (Log::PROGRESS, s_log_id,
+	 "Start preparing DB @ " << epoch_time);
     
     // should first encrypt all the records to produce the encrypted
     // database, and add the destination index tags to all the records
     prepare ();
 
-    clog << "Done with preparing DB @ " << epoch_time << endl;
+    LOG (Log::PROGRESS, s_log_id,
+	 "Done with preparing DB @ " << epoch_time);
     
 
     // perform the permutation using our own switch function object to perform
@@ -166,7 +175,8 @@ void Shuffler::shuffle ()
     // though, need to think about this
     remove_tags ();
 
-    clog << "Shuffle done @ " << epoch_time << endl;
+    LOG (Log::PROGRESS, s_log_id,
+	 "Shuffle done @ " << epoch_time);
 }
 
 
@@ -288,7 +298,8 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
     // switch, and a temporary iterator
     Shuffler::rec_list_t::iterator r1, r2;
 
-//    clog << "Batch list size at start is " << io_recs.size() << endl;
+    LOG (Log::DUMP, s_log_id,
+	 "Batch list size at start is " << io_recs.size());
     
     r1 = io_recs.begin(); // record 1, right at the beginning
     // record 2, next one in list
@@ -319,7 +330,8 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
 	std::advance (r2, 2);
     }
 
-//    clog << "Batch list size at end is " << io_recs.size() << endl;
+    LOG (Log::DUMP, s_log_id,
+	 "Batch list size at end is " << io_recs.size());
 
     
 }

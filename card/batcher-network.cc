@@ -13,6 +13,8 @@ using std::endl;
 using std::setw;
 
 
+int NwStaticInit::num_insts;
+
 
 #ifdef _TESTING_BATCHER_NETWORK
 

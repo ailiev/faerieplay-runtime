@@ -53,7 +53,6 @@ private:
     
     FlatIO _cct_io;
     FlatIO _vals_io;
-
 };
 
 

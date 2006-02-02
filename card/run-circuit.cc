@@ -8,10 +8,11 @@
 #include <sstream>
 #include <fstream>
 
+#include <math.h>
+
 #include <boost/optional/optional.hpp>
 #include <boost/none.hpp>
-
-#include <math.h>
+#include <boost/preprocessor/facilities/expand.hpp>
 
 #include <pir/card/io.h>
 #include <pir/card/io_flat.h>
@@ -22,6 +23,7 @@
 #include <pir/card/configs.h>
 
 #include <pir/common/comm_types.h>
+#include <pir/common/logging.h>
 #include <pir/common/sym_crypto.h>
 
 #include <common/gate.h>
@@ -39,6 +41,9 @@ using namespace std;
 auto_ptr<CryptoProviderFactory> g_provfact;
 
 
+namespace {
+    unsigned s_log_id = Log::add_module ("run-circuit");
+}
 
 
 static void exception_exit (const std::exception& ex, const string& msg) {
@@ -73,9 +78,6 @@ static void usage (const char* progname) {
 
 int main (int argc, char *argv[]) {
 
-    // shut up clog for now
-    //    clog.rdbuf(NULL);
-
     set_new_handler (out_of_memory);
 
     init_default_configs ();
@@ -89,7 +91,12 @@ int main (int argc, char *argv[]) {
 	g_provfact = init_crypt (g_configs);
 
 	CircuitEval evaluator (g_configs.cct_name, g_provfact.get());
+
+	clog << "run-circuit starting circuit evaluation at "
+	     << epoch_time << endl;
 	evaluator.eval ();
+	clog << "run-circuit done with circuit evaluation at "
+	     << epoch_time << endl;
 //     }
 //     catch (const std::exception & ex) {
 // 	cerr << "Exception: " << ex.what() << endl;
@@ -144,12 +151,12 @@ void CircuitEval::eval ()
     for (unsigned i=0; i < num_gates; i++) {
 
 	if (i % 100 == 0) {
-	    cerr << "Doing gate " << i << endl;
+	    LOG (Log::PROGRESS, s_log_id, "Doing gate " << i);
 	}
 
 	read_gate (gate, i);
 
-//	    print_gate (clog, gate);
+	print_gate (clog, gate);
 
 	do_gate (gate);
 
@@ -165,9 +172,9 @@ void CircuitEval::read_gate (gate_t & o_gate,
     
     _cct_io.read (gate_num, gate_bytes);
 
-    clog << "Unwrapped gate to " << gate_bytes.len() << " bytes" << endl;
+//    clog << "Unwrapped gate to " << gate_bytes.len() << " bytes" << endl;
     string gate_str (gate_bytes.cdata(), gate_bytes.len());
-    clog << "The gate:" << endl << gate_str << endl;
+//    clog << "The gate:" << endl << gate_str << endl;
 
 // 	clog << "gate_byte len: " << gate_bytes.len() << endl;
 // 	    "bytes: " << gate_bytes.cdata() <<  endl;
@@ -336,8 +343,8 @@ void CircuitEval::do_gate (const gate_t& g)
     
 	
     default:
-	cerr << "At gate " << g.num
-	     << ", unknown operation " << g.op.kind << endl;
+	LOG (Log::ERR, s_log_id, "At gate " << g.num
+	     << ", unknown operation " << g.op.kind << endl);
 	exit (EXIT_FAILURE);
 
     }
@@ -352,7 +359,8 @@ void CircuitEval::do_gate (const gate_t& g)
 	int intval;
 	assert (res_bytes.len() == sizeof(intval));
 	memcpy (&intval, res_bytes.data(), sizeof(intval));
-	cout << "Output " << g.comment << ": " << intval << endl;
+	LOG (Log::DEBUG, s_log_id,
+	     "Output " << g.comment << ": " << intval << endl);
     }
 }
 
@@ -371,8 +379,8 @@ ByteBuffer CircuitEval::get_gate_val (int gate_num)
     
     _vals_io.read (gate_num, buf);
 
-    clog << "get_gate_val for gate " << gate_num
-	 << ": len=" << buf.len() << endl;
+//     clog << "get_gate_val for gate " << gate_num
+// 	 << ": len=" << buf.len() << endl;
     
     return buf;
 }

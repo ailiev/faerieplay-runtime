@@ -23,9 +23,6 @@
  */
 
 
-#ifndef _SHUFFLE_H
-#define _SHUFFLE_H
-
 
 #include <vector>
 
@@ -42,6 +39,8 @@
 #include <pir/card/permutation.h>
 
 
+#ifndef _SHUFFLE_H
+#define _SHUFFLE_H
 
 
 class Shuffler {

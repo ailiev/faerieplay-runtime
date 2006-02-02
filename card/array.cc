@@ -100,6 +100,12 @@ using boost::optional;
 using boost::none;
 
 
+namespace {
+    unsigned s_log_id = Log::add_module ("array");
+}
+
+
+
 // instantiate the static array map
 Array::map_t Array::_arrays;
 Array::des_t Array::_next_array_num = 1;

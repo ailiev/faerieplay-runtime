@@ -33,7 +33,7 @@ CPPFLAGS    += -DHAVE_OPENSSL
 endif
 
 
-TARGETS=runtime enc-circuit
+TARGETS=array permute runtime enc-circuit
 
 all: build
 
@@ -47,8 +47,10 @@ LIBOBJS=$(LIBSRCS:.cc=.o)
 
 
 # external libraries. they get added into LDLIBS in common.make
-LIBDIRS = $(LEEDS_LIB) ../common
-LDLIBFILES = -lcard -lsfdl-common -lcommon
+LIBDIRS		+= $(LEEDS_LIB) ../common
+LDLIBFILES	+= -lcard -lsfdl-common -lcommon
+
+
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
 

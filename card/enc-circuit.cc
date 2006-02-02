@@ -37,6 +37,12 @@ using namespace std;
 using boost::shared_ptr;
 
 
+namespace {
+    unsigned s_log_id = Log::add_module ("enc-circuit");
+}
+
+
+
 static void exception_exit (const std::exception& ex, const string& msg) {
     cerr << msg << ":" << endl
 	 << ex.what() << endl
@@ -111,8 +117,8 @@ int main (int argc, char *argv[])
 
 		io->read (i, obj_bytes);
 		
-		clog << "Writing " << obj_bytes.len() << " bytes for object " <<
-		    i << endl;
+		LOG (s_log_id, "Writing "
+		     << obj_bytes.len() << " bytes for object " << i);
 		
 		temp.write (i, obj_bytes);
 	    }

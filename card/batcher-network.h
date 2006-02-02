@@ -2,10 +2,6 @@
 // LICENCE
 // Jan 2004
 
-
-#ifndef _BATCHER_PERMUTE_H
-#define _BATCHER_PERMUTE_H
-
 #include <iostream>
 #include <iomanip>
 
@@ -13,9 +9,35 @@
 
 
 #include <pir/common/utils.h>
+#include <pir/common/logging.h>
 #include <pir/common/exceptions.h>
 
 #include <pir/card/lib.h>
+
+
+#ifndef _BATCHER_PERMUTE_H
+#define _BATCHER_PERMUTE_H
+
+namespace {
+    unsigned s_batcher_network_log_id;
+}
+
+class NwStaticInit {
+public:
+    NwStaticInit () {
+	if (num_insts == 0) {
+	    s_batcher_network_log_id = Log::add_module ("batcher-network");
+	}
+	num_insts++;
+    }
+    
+    static int num_insts;
+};
+
+namespace {
+    // one for each translation unit (.cc file):
+    NwStaticInit _nw_init;
+}
 
 
 // the _Comparator type should be callable as
@@ -42,8 +64,9 @@ void run_batcher
 
 	// do the inverted half-cleaners. g is the first top wire in
 	// the group
-	std::clog << "Merger " << std::setw(3) << m << " half-cleaners @ "
-	     << epoch_time << std::endl;
+	LOG (Log::PROGRESS, s_batcher_network_log_id,
+	     "Merger " << std::setw(3) << m << " half-cleaners @ "
+	     << epoch_time);
 	
 	for (unsigned g = 0; g < N; g += M) {
 	    // the first bottom wire
@@ -64,10 +87,11 @@ void run_batcher
 	// now we shadow m with the C-T m in here
 	for (unsigned m = M/2; m >= 2; m >>= 1) {
 	    
-	    std::clog << "Merger " << std::setw(3) << m_outer
-		      << ", bitonic sorter level "
-		      << std::setw (3) << lgN_floor(m) << " @ "
-		      << epoch_time << std::endl;
+	    LOG(Log::PROGRESS, s_batcher_network_log_id,
+		"Merger " << std::setw(3) << m_outer
+		<< ", bitonic sorter level "
+		<< std::setw (3) << lgN_floor(m) << " @ "
+		<< epoch_time);
 	    
 	    // g is the first wire in the current group
 	    for (unsigned g = 0; g < N; g += m) {
