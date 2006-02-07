@@ -30,6 +30,8 @@
 #include <common/misc.h>
 #include <common/consts-sfdl.h>
 
+#include "stream/processor.h"
+#include "stream/helpers.h"
 
 
 using namespace std;
@@ -38,7 +40,8 @@ using boost::shared_ptr;
 
 
 namespace {
-    unsigned s_log_id = Log::add_module ("enc-circuit");
+    Log::logger_t logger = Log::makeLogger ("enc-circuit",
+					    boost::none, boost::none);
 }
 
 
@@ -61,10 +64,6 @@ static void usage (const char* progname) {
 
 int main (int argc, char *argv[])
 {
-
-    // shut up clog for now
-    //    clog.rdbuf(NULL);
-
 
     init_default_configs ();
     if ( do_configs (argc, argv) != 0 ) {
@@ -99,6 +98,7 @@ int main (int argc, char *argv[])
 	    
 //	    clog << "*** Working on container " << io->getName() << endl;
 	    
+	    
 	    FlatIO * io = conts[c];
 	    
 	    size_t num_objs = io->getLen();
@@ -112,19 +112,12 @@ int main (int argc, char *argv[])
 						     shared_ptr<SymWrapper>
 						     (new SymWrapper
 						      (provfact.get())))));
+
 	    // and transfer each object in the container
-	    for (unsigned i=0; i < num_objs; i++) {
-
-		io->read (i, obj_bytes);
-		
-		LOG (Log::DEBUG, s_log_id,
-		     "Writing "
-		     << obj_bytes.len() << " bytes for object " << i);
-		
-		temp.write (i, obj_bytes);
-	    }
-
-	    temp.flush ();
+	    stream_process_itr (identity_itemproc,
+				pir::make_counting_range (0U, num_objs),
+				*io,
+				temp);
 
 	    // and move encrypted container back to original name.
 	    *io = temp;
