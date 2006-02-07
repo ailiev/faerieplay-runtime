@@ -49,22 +49,22 @@ struct stream_processor {
     
 	    // read in the next needed items, apply the itemproc to them, and
 	    // write them out again
-	    typename StreamOrder::type idxsi;	// an iterator
+	    typename boost::range_iterator<StreamOrder>::type idxsi; // an iterator
     
-	    for (idxsi = pir::range_begin (order);
-		 idxsi != pir::range_end (order);
+	    for (idxsi = boost::const_begin (order);
+		 idxsi != boost::const_end (order);
 		 idxsi++)
 	    {
 		std::pair<idx_batch_t, idx_batch_t> idxs = *idxsi;
 	
 		obj_batch_t objs, f_objs;
 	
-		in.read (make_container_range (idxs.first),
+		in.read (idxs.first,
 			 objs.begin());
 	
 		itemproc (idxs.first, objs, f_objs);
 	
-		out.write (make_container_range (idxs.second), f_objs.begin());
+		out.write (idxs.second, f_objs.begin());
 	    }
 	}
 };
@@ -87,10 +87,10 @@ struct stream_processor<ItemProc,StreamOrder,1>
     
 	    // read in the next needed items, apply the itemproc to them, and
 	    // write them out again
-	    typename StreamOrder::type idxsi;	// an iterator
+	    typename boost::range_iterator<StreamOrder>::type idxsi; // an iterator	    
     
-	    for (idxsi = order.range_begin;
-		 idxsi != order.range_end;
+	    for (idxsi = boost::const_begin(order);
+		 idxsi != boost::const_end (order);
 		 idxsi++)
 	    {
 		std::pair<idx_batch_t, idx_batch_t> idxs = *idxsi;
