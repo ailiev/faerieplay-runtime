@@ -131,7 +131,7 @@ int main (int argc, char * argv[]) {
 
 
 namespace {
-    unsigned s_log_id = Log::add_module ("batcher-permute");
+    Log::logger_t logger = Log::makeLogger ("batcher-permute");
 }
 
 
@@ -141,7 +141,8 @@ Shuffler::Shuffler (shared_ptr<FlatIO> container,
     throw (crypto_exception)
     : _io   (container),
       _p    (p),
-      N	    (N)
+      N	    (N),
+      _read_cache_size (CACHEMEM / _io->getElemSize())
 {}
 
 
@@ -151,14 +152,14 @@ Shuffler::Shuffler (shared_ptr<FlatIO> container,
 void Shuffler::shuffle ()
     throw (hostio_exception, crypto_exception, runtime_exception)
 {
-    LOG (Log::PROGRESS, s_log_id,
+    LOG (Log::PROGRESS, logger,
 	 "Start preparing DB @ " << epoch_time);
     
     // should first encrypt all the records to produce the encrypted
     // database, and add the destination index tags to all the records
     prepare ();
 
-    LOG (Log::PROGRESS, s_log_id,
+    LOG (Log::PROGRESS, logger,
 	 "Done with preparing DB @ " << epoch_time);
     
 
@@ -166,8 +167,14 @@ void Shuffler::shuffle ()
     // the actual switches
     // TODO: figure out how to set the batch size better
     {
-	const size_t BATCHSIZE = 4;
-	Comparator comparator (*this, BATCHSIZE);
+	// a batch element for the comparator is actually two objects
+	// make sure the batch size divides N.
+	unsigned batchsize = min (_read_cache_size/2, N-1);
+	while (N % batchsize != 0)
+	{
+	    batchsize--;
+	}
+	Comparator comparator (*this, batchsize);
 	run_batcher (N, comparator);
     }
 
@@ -176,7 +183,7 @@ void Shuffler::shuffle ()
     // though, need to think about this
     remove_tags ();
 
-    LOG (Log::PROGRESS, s_log_id,
+    LOG (Log::PROGRESS, logger,
 	 "Shuffle done @ " << epoch_time);
 }
 
@@ -190,6 +197,11 @@ void Shuffler::prepare () throw (better_exception)
     // tag all items with their destination index
 
     for (index_t i=0; i < N; i++) {
+	standard_prefetch (*_io,
+			   i,
+			   _read_cache_size,
+			   N);
+
 	// read
 	_io->read (i, current);
 
@@ -212,6 +224,10 @@ void Shuffler::remove_tags () throw (hostio_exception, crypto_exception)
     
 
     for (index_t i=0; i < N; i++) {
+	standard_prefetch (*_io,
+			   i,
+			   _read_cache_size,
+			   N);
 	// read
 	_io->read (i, current);
 
@@ -242,32 +258,42 @@ void Shuffler::Comparator::operator () (index_t a, index_t b)
 
     // is it time to do them?
     if (_batch_size == _max_batch_size) {
-
-	obj_list_t objs;
-
-	// first build a list of index_t for all the records involved
-	build_idx_list (_idxs_temp, _comparators);
-
-	// now fetch and decrypt all the blobs.
-	master._io->read (_idxs_temp, objs);
-	
-	// now do the switches inside the blobs list
-	do_comparators (objs, _comparators);
-
-	// and now write out the switched blobs
-	master._io->write (_idxs_temp, objs);
-
+	do_batch();
 	// reset batch
 	_batch_size = 0;
     }
 }
 
 
+void Shuffler::Comparator::do_batch ()
+    throw (hostio_exception, crypto_exception)
+{
+    obj_list_t objs;
+
+    // first build a list of index_t for all the records involved
+    build_idx_list (_idxs_temp, _comparators);
+
+    // now fetch and decrypt all the blobs.
+    master._io->read (_idxs_temp, objs);
+	
+    // now do the switches inside the blobs list
+    do_comparators (objs, _comparators);
+
+    // and now write out the switched blobs
+    master._io->write (_idxs_temp, objs);
+}
+
+
 Shuffler::Comparator::~Comparator ()
 {
+    LOG (Log::DEBUG, logger,
+	 "~Comparator(), with _batch_size = " << _batch_size);
+    
     if (_batch_size > 0) {
-	throw invalid_state_exception (
-	    "Comparator has not done all its batched comparators!");
+	LOG (Log::DEBUG, logger,
+	     "Comparator doing " << _batch_size
+	     << " remaing comparators at the end");
+	do_batch ();
     }
 }
 
@@ -299,7 +325,7 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
     // switch, and a temporary iterator
     Shuffler::rec_list_t::iterator r1, r2;
 
-    LOG (Log::DUMP, s_log_id,
+    LOG (Log::DUMP, logger,
 	 "Batch list size at start is " << io_recs.size());
     
     r1 = io_recs.begin(); // record 1, right at the beginning
@@ -331,7 +357,7 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
 	std::advance (r2, 2);
     }
 
-    LOG (Log::DUMP, s_log_id,
+    LOG (Log::DUMP, logger,
 	 "Batch list size at end is " << io_recs.size());
 
     

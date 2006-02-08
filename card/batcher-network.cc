@@ -3,6 +3,7 @@
 
 #include <assert.h>
 
+#include <pir/common/utils-macros.h>
 
 #include "batcher-network.h"
 
@@ -13,7 +14,7 @@ using std::endl;
 using std::setw;
 
 
-int NwStaticInit::num_insts;
+INSTANTIATE_STATIC_INIT (BatcherNetwork);
 
 
 #ifdef _TESTING_BATCHER_NETWORK

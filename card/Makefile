@@ -9,6 +9,9 @@ include $(PIR)/common.make
 
 CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
 
+# for use by stream/processor.h
+# CPPFLAGS += -I../../..
+
 # CPPFLAGS += -DNDEBUG
 
 CFLAGS += #-O -march=i486
@@ -41,7 +44,7 @@ build: $(TARGETS)
 
 install: build
 #	strip $(TARGETS)
-	install $(TARGETS) $(DESTDIR)
+	$(INSTALL) $(TARGETS) $(DESTDIR)
 
 LIBOBJS=$(LIBSRCS:.cc=.o)
 
@@ -63,7 +66,7 @@ runtime: run-circuit.o $(CCT_DEPS)
 	$(CXXLINK)
 
 enc-circuit.o : CPPFLAGS += $(CCT_FLAGS)
-enc-circuit: enc-circuit.o $(CCT_DEPS)
+enc-circuit: enc-circuit.o $(LDLIBFILES) #$(CCT_DEPS)
 	$(CXXLINK)
 
 batcher-permute-main.o : CPPFLAGS += -D_TESTING_BATCHER_PERMUTE

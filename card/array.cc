@@ -4,7 +4,7 @@
 #include <math.h>
 
 #include <boost/shared_ptr.hpp>
-#include <boost/optional/optional.hpp>
+#include <boost/optional/optional.hpp> 
 #include <boost/none.hpp>
 
 
@@ -72,19 +72,21 @@ int main (int argc, char *argv[])
     {
 	index_t idx = atoi (idx_s.c_str());
 	
-	cout << endl << "Command " << i++ << ": " << cmd << " " << idx;
+	cout << endl << "Command " << i++ << ": " << cmd << " [" << idx << "] ";
 
 	if (cmd == "write") {
 	    getline (cmds, val);
 	    cout << "(" << val << ")";
 	    test.write (idx, 0, ByteBuffer (val));
+	    cout << " --> ()";
 	}
 	else if (cmd == "read") {
+	    cout << "()";
 	    ByteBuffer res = test.read (idx);
 
-	    cout << " --> ";
+	    cout << " --> (";
 	    cout.write (res.cdata(), res.len());
-	    cout << endl;
+	    cout << ")" << endl;
 	}
     }
 
@@ -110,31 +112,6 @@ namespace {
 Array::map_t Array::_arrays;
 Array::des_t Array::_next_array_num = 1;
 
-
-void prefetch_contiguous_from (FlatIO & io,
-			       index_t start,
-			       size_t howmany)
-    throw (better_exception)
-{
-    return;
-    FlatIO::idx_list_t l (howmany);
-    std::generate (l.begin(), l.end(), counter(start));
-    io.prefetch (l);
-}
-
-void standard_prefetch (FlatIO & io,
-			index_t i,
-			size_t batch_size,
-			size_t total)
-    throw (better_exception)
-{
-    if (i % batch_size == 0) {
-	prefetch_contiguous_from (
-	    io,
-	    i,
-	    std::min (batch_size, total - i));
-    }
-}
 
 
 namespace {
@@ -175,14 +152,9 @@ Array::Array (const string& name,
 
       _num_retrievals	(0),
 
-      _rand_prov	(_prov_fact->getRandProvider()),
+      _rand_prov	(_prov_fact->getRandProvider())
 
 //      _p		(auto_ptr<TwoWayPermutation> (new IdPerm (N))),
-      _idx_batchsize	(64),
-
-      _obj_batchsize	(size_params ?
-			 (16*(1<<10)) / _elem_size  : // use 16KB total
-			 32)
 {
 
     // if the array exists, get its sizes, and fill in the size-dependent
@@ -193,6 +165,13 @@ Array::Array (const string& name,
     }
 
     _max_retrievals = lrint (sqrt(float(N))) *  lgN_floor(N);
+    // this happens for very small N
+    if (_max_retrievals >= N) {
+	_max_retrievals = N-1;
+    }
+
+    // init to identity permutation, and then do repermute()
+    _p 		    = auto_ptr<TwoWayPermutation> (new IdPerm (N));
 
     // set up the working area, with a list of indices and objects
     // can't assign from a temporary unnamed FlatIO for some reason
@@ -203,16 +182,8 @@ Array::Array (const string& name,
     _workarea.idxs = tmp_idxs;
     _workarea.items = tmp_objs;
     
-    // init to identity permutation, and then do repermute()
-    _p 		    = auto_ptr<TwoWayPermutation> (new IdPerm (N));
 
-
-    // need to:
-    // - generate a new permutation,
-    // - fill out the container with encrypted zeros (all different because of
-    //   IVs)
-    // - permute it
-
+    // add encrypt/decrypt filters to all the IO objects.
     FlatIO * ios [] = { &_array_io, &_workarea.idxs, &_workarea.items };
     for (unsigned i=0; i < ARRLEN(ios); i++) {
 	ios[i]->appendFilter (
@@ -222,14 +193,15 @@ Array::Array (const string& name,
 				  (new SymWrapper (_prov_fact)))));
     }
 
-    // fill out a new array with nulls
-    ByteBuffer zero (_elem_size);
-    zero.set (0);
-    for (index_t i=0; i < N; i++) {
-	write_clear (i, zero);
+    // if array is new, fill out with nulls.
+    if (size_params)
+    {
+	ByteBuffer zero (_elem_size);
+	zero.set (0);
+	for (index_t i=0; i < N; i++) {
+	    write_clear (i, zero);
+	}
     }
-    _array_io.flush();
-
 
     repermute();
 }
@@ -272,7 +244,10 @@ void Array::write_clear (index_t idx, const ByteBuffer& val)
     _array_io.write (idx, val);
 }
 
-    
+
+//#define NO_REFETCHES
+
+
 ByteBuffer Array::read (index_t idx)
     throw (better_exception)
 {
@@ -286,14 +261,15 @@ ByteBuffer Array::read (index_t idx)
 
     index_t p_idx = _p->p(idx);
 
-//     ByteBuffer obj;
-//     _array_io.read (p_idx, obj);
-//     _num_retrievals++;
-//     if (_num_retrievals > _max_retrievals) {
-// 	repermute ();
-//     }
-//     return obj;
-    
+#ifdef NO_REFETCHES
+    ByteBuffer obj;
+    _array_io.read (p_idx, obj);
+    _num_retrievals++;
+    if (_num_retrievals > _max_retrievals) {
+	repermute ();
+    }
+    return obj;
+#endif
     
     append_new_working_item (p_idx);
 
@@ -313,13 +289,15 @@ void Array::write (index_t idx, size_t off,
     
     index_t p_idx = _p->p(idx);
 
-//     _array_io.write (p_idx, val);
-//     _array_io.flush ();
-//     _num_retrievals++;
-//     if (_num_retrievals > _max_retrievals) {
-// 	repermute ();
-//     }
-//     return;
+#ifdef NO_REFETCHES
+    _array_io.write (p_idx, val);
+    _array_io.flush ();
+    _num_retrievals++;
+    if (_num_retrievals > _max_retrievals) {
+	repermute ();
+    }
+    return;
+#endif
     
     append_new_working_item (p_idx);
 
@@ -348,17 +326,20 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
     // TODO: if we are reading, no need to decrypt all the objects, but just the
     // real one at the end.
     
-    unsigned that_idx = 0;
+    unsigned T_i = 0;
 
     // go through all the _workarea indices and objects. if we have new_val,
     // re-write every item (not index); otherwise just read and keep the one
     // numbered idx, which should be there after append_new_working_item()
     for (index_t i = 0; i < _num_retrievals; i++) {
 
-	that_idx = hostio_read_int (_workarea.idxs, i);
+	standard_prefetch_touched (i, true, true);
+	
+	T_i = hostio_read_int (_workarea.idxs, i);
 	_workarea.items.read (i, obj);
 
-	if (that_idx == idx) {
+	if (T_i == idx) {
+	    assert (the_obj.len() == 0);
 	    the_obj = ByteBuffer (obj, ByteBuffer::DEEPCOPY);
 	    if (new_val) {
 		// all sizes need to be the same! caller should ensure this
@@ -401,6 +382,7 @@ void Array::repermute ()
     //  - 
 
 
+#ifndef NO_REFETCHES
     {
 	// copy values out of the working area and into the main array
 	index_t idx;
@@ -417,6 +399,7 @@ void Array::repermute ()
 
 	_array_io.flush();
     }
+#endif // NO_REFETCHES
 	
     // the new permutation
     auto_ptr<TwoWayPermutation> p2 (new LRPermutation (
@@ -540,6 +523,8 @@ void Array::standard_prefetch_touched (index_t i,
 				       bool do_idxs, bool do_objs)
     throw (better_exception)
 {
+    return;
+    
     if (do_idxs) {
 	standard_prefetch (_workarea.idxs,
 			   i,

@@ -116,8 +116,8 @@ int main (int argc, char *argv[])
 	    // and transfer each object in the container
 	    stream_process_itr (identity_itemproc,
 				pir::make_counting_range (0U, num_objs),
-				*io,
-				temp);
+				io,
+				&temp);
 
 	    // and move encrypted container back to original name.
 	    *io = temp;

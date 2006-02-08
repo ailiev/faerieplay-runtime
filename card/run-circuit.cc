@@ -7,6 +7,7 @@
 #include <iostream>
 #include <sstream>
 #include <fstream>
+#include <iomanip>
 
 #include <math.h>
 
@@ -34,6 +35,8 @@
 
 #include "run-circuit.h"
 
+// debug:
+// myvalgrind.sh --tool=memcheck --num-callers=18 /home/sasho/work/code/sfdl-runtime/card/runtime -n v0
 
 using namespace std;
 
@@ -41,9 +44,6 @@ using namespace std;
 auto_ptr<CryptoProviderFactory> g_provfact;
 
 
-namespace {
-    unsigned s_log_id = Log::add_module ("run-circuit");
-}
 
 
 static void exception_exit (const std::exception& ex, const string& msg) {
@@ -92,11 +92,14 @@ int main (int argc, char *argv[]) {
 
 	CircuitEval evaluator (g_configs.cct_name, g_provfact.get());
 
-	clog << "run-circuit starting circuit evaluation at "
-	     << epoch_time << endl;
+	LOG (Log::PROGRESS, CircuitEval::logger, "run-circuit starting circuit evaluation at "
+	     << epoch_time);
+
 	evaluator.eval ();
-	clog << "run-circuit done with circuit evaluation at "
-	     << epoch_time << endl;
+
+	LOG (Log::PROGRESS, CircuitEval::logger,
+	     "run-circuit done with circuit evaluation at "
+	     << epoch_time);
 //     }
 //     catch (const std::exception & ex) {
 // 	cerr << "Exception: " << ex.what() << endl;
@@ -122,15 +125,21 @@ using boost::optional;
 using boost::none;
 
 
+// static instantiations
+Log::logger_t CircuitEval::logger, CircuitEval::gate_logger;
+
+INSTANTIATE_STATIC_INIT(CircuitEval);
+
+
 
 CircuitEval::CircuitEval (const std::string& cctname,
 			  CryptoProviderFactory * fact)
     // tell the HostIO to not use a write cache (size 0)
-    : _cct_io	(cctname + DIRSEP + CCT_CONT, none, 0U),
-      _vals_io	(cctname + DIRSEP + VALUES_CONT, none, 0U)
+    : _cct_io	(cctname + DIRSEP + CCT_CONT, none),
+      _vals_io	(cctname + DIRSEP + VALUES_CONT, none)
 {
     // NOTE: how are the keys set up? _vals_io calls initExisting() on the
-    // filter, which then reads in the container keys using its master pointer
+    // filter, which then reads in the container keys using its #master pointer
     // (the FlatIO object).
     _vals_io.appendFilter (auto_ptr<HostIOFilter>
 			   (new IOFilterEncrypt (&_vals_io,
@@ -151,12 +160,12 @@ void CircuitEval::eval ()
     for (unsigned i=0; i < num_gates; i++) {
 
 	if (i % 100 == 0) {
-	    LOG (Log::PROGRESS, s_log_id, "Doing gate " << i);
+	    LOG (Log::PROGRESS, logger, "Doing gate " << i);
 	}
 
 	read_gate (gate, i);
 
-	LOG (Log::DEBUG, s_log_id, gate);
+	LOG (Log::DEBUG, logger, gate << LOG_ENDL);
 
 	do_gate (gate);
     }
@@ -171,12 +180,11 @@ void CircuitEval::read_gate (gate_t & o_gate,
     
     _cct_io.read (gate_num, gate_bytes);
 
-//    clog << "Unwrapped gate to " << gate_bytes.len() << " bytes" << endl;
+    LOG (Log::DUMP, logger,
+	 "Unwrapped gate to " << gate_bytes.len() << " bytes");
     string gate_str (gate_bytes.cdata(), gate_bytes.len());
-//    clog << "The gate:" << endl << gate_str << endl;
 
-// 	clog << "gate_byte len: " << gate_bytes.len() << endl;
-// 	    "bytes: " << gate_bytes.cdata() <<  endl;
+    LOG (Log::DUMP, logger, "gate_byte len: " << gate_bytes.len());
 
     o_gate = unserialize_gate (gate_str);
 }
@@ -184,7 +192,7 @@ void CircuitEval::read_gate (gate_t & o_gate,
 
 void CircuitEval::do_gate (const gate_t& g)
 {
-    int res;
+    int res = 12345678;
     ByteBuffer res_bytes;
 
 
@@ -201,6 +209,9 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	res = do_bin_op (static_cast<gate_t::binop_t>(g.op.params[0]),
 			 arg_val[0], arg_val[1]);
+
+	LOG (Log::DUMP, logger,
+	     "BinOp returns " << res);
 
 	res_bytes = ByteBuffer (&res, sizeof(res), ByteBuffer::SHALLOW);
 
@@ -262,6 +273,9 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	ByteBuffer outs [] = {  arr_ptr, read_res };
 	res_bytes = concat_bufs (outs, outs + ARRLEN(outs));
+
+	LOG (Log::DEBUG, logger,
+	     "ReadDynArray gate returning " << res_bytes);
     }
     break;
 
@@ -320,6 +334,8 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	res_bytes = out;
 	
+	LOG (Log::DEBUG, logger,
+	     "Slicer gate returning " << res_bytes);
     }
     break;
 
@@ -342,12 +358,17 @@ void CircuitEval::do_gate (const gate_t& g)
     
 	
     default:
-	LOG (Log::ERR, s_log_id, "At gate " << g.num
-	     << ", unknown operation " << g.op.kind << endl);
+	LOG (Log::ERROR, logger, "At gate " << g.num
+	     << ", unknown operation " << g.op.kind);
 	exit (EXIT_FAILURE);
 
     }
 
+    LOG (Log::DEBUG, gate_logger,
+	 setiosflags(ios::left)
+	 << setw(6) << g.num
+	 << setw(12) << res
+	 << res_bytes);
     
     if (res_bytes.len() > 0) {
 	put_gate_val (g.num, res_bytes);
@@ -377,8 +398,8 @@ ByteBuffer CircuitEval::get_gate_val (int gate_num)
     
     _vals_io.read (gate_num, buf);
 
-//     clog << "get_gate_val for gate " << gate_num
-// 	 << ": len=" << buf.len() << endl;
+    LOG (Log::DUMP, logger, "get_gate_val for gate " << gate_num
+	  << ": len=" << buf.len());
     
     return buf;
 }
@@ -395,6 +416,10 @@ int CircuitEval::get_int_val (int gate_num)
     assert (buf.len() == sizeof(answer));
     
     memcpy (&answer, buf.data(), sizeof(answer));
+
+    LOG (Log::DUMP, logger, "get_int_val (" << gate_num << ") ->"
+	 << answer);
+
     return answer;
 }
 

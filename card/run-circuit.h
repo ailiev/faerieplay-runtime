@@ -53,7 +53,20 @@ private:
     
     FlatIO _cct_io;
     FlatIO _vals_io;
+
+public:
+
+    static Log::logger_t logger, gate_logger;
+
+    DECL_STATIC_INIT (
+	logger = Log::makeLogger ("run-circuit");
+	gate_logger = Log::makeLogger ("gate-logger",
+				       Just (std::string("run-circuit-gates.log")));
+	);
 };
+
+
+DECL_STATIC_INIT_INSTANCE(CircuitEval);
 
 
 #endif // _RUN_CIRCUIT_H

@@ -5,6 +5,34 @@
 
 #include "utils.h"
 
+
+void prefetch_contiguous_from (FlatIO & io,
+			       index_t start,
+			       size_t howmany)
+    throw (better_exception)
+{
+    FlatIO::idx_list_t l (howmany);
+    std::generate (l.begin(), l.end(), counter(start));
+    io.prefetch (l);
+}
+
+void standard_prefetch (FlatIO & io,
+			index_t i,
+			size_t batch_size,
+			size_t total)
+    throw (better_exception)
+{
+    if (i % batch_size == 0) {
+	prefetch_contiguous_from (
+	    io,
+	    i,
+	    std::min (batch_size, total - i));
+    }
+}
+
+
+
+
 int bb2int (const ByteBuffer& bb)
 {
     int answer = 0;
@@ -15,6 +43,7 @@ int bb2int (const ByteBuffer& bb)
     memcpy (&answer, bb.data(), bb.len());
     return answer;
 }
+
 
 // read an integer from this io object
 int hostio_read_int (FlatIO & io, index_t idx)
@@ -44,6 +73,7 @@ ByteBuffer int2bb (int i)
     return answer;
 }
 
+
 void hostio_write_int (FlatIO & io, index_t idx,
 		       int val)
 {
@@ -66,5 +96,4 @@ void hostio_write_ints (FlatIO & io,
 	       
     io.write (idxs, objs);
 }
-
 

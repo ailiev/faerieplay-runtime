@@ -68,6 +68,9 @@ private:
     boost::shared_ptr<ForwardPermutation> _p;
     size_t N;
 
+    // how big to set the read-ahead cache?
+    size_t _read_cache_size;
+
     
     typedef obj_list_t rec_list_t;
     
@@ -82,10 +85,10 @@ private:
 	Comparator (Shuffler & master,
 		    size_t max_batch_size)
 	    : master		(master),
-	      _batch_size	(0),
 	      _max_batch_size	(max_batch_size),
-	      _idxs_temp	(_max_batch_size * 2),
-	      _comparators	(_max_batch_size)
+	      _batch_size	(0),
+	      _comparators	(_max_batch_size),
+	      _idxs_temp	(_max_batch_size * 2)
 	    {}
 
 	void operator () (index_t a, index_t b)
@@ -97,21 +100,29 @@ private:
 	Shuffler & master;
 
 	// how many switches to store until we bulk-switch them all
-	size_t _batch_size, _max_batch_size;
+	size_t _max_batch_size;
+
+	/// how many comparators now cached?
+	size_t _batch_size;
 	
+	struct comp_params_t {
+	    index_t a, b;
+	};
+	
+	/// the actual stored comparators, #_batch_size of them being valid.
+	std::vector<comp_params_t> _comparators;
+
+
 	// for storing record indices to be fetched
 	std::vector<index_t> _idxs_temp;
 
 	// list to collect record-pair addresses representing
 	// comparators still to be done
 	
-	struct comp_params_t {
-	    index_t a, b;
-	};
-	
-	std::vector<comp_params_t> _comparators;
-
-
+	// do the cached comparisons.
+	void do_batch ()
+	    throw (hostio_exception, crypto_exception);
+    
 	void build_idx_list (std::vector<index_t> & o_ids,
 			     const std::vector<comp_params_t>& switches);
 

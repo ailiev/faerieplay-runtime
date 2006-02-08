@@ -1,3 +1,3 @@
-#define ARR_OBJSIZE 20
+#define ARR_OBJSIZE 4
 #define ARR_ARRAYLEN 64
-#define ARR_NUMSTEPS 87
+#define ARR_NUMSTEPS 139

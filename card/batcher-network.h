@@ -18,26 +18,18 @@
 #ifndef _BATCHER_PERMUTE_H
 #define _BATCHER_PERMUTE_H
 
-namespace {
-    unsigned s_batcher_network_log_id;
+
+
+namespace BatcherNetwork {
+    static Log::logger_t logger;
+
+    DECL_STATIC_INIT(logger = Log::makeLogger ("batcher-network",
+					       boost::none, boost::none));
 }
 
-class NwStaticInit {
-public:
-    NwStaticInit () {
-	if (num_insts == 0) {
-	    s_batcher_network_log_id = Log::add_module ("batcher-network");
-	}
-	num_insts++;
-    }
-    
-    static int num_insts;
-};
 
-namespace {
-    // one for each translation unit (.cc file):
-    NwStaticInit _nw_init;
-}
+DECL_STATIC_INIT_INSTANCE(BatcherNetwork);
+
 
 
 // the _Comparator type should be callable as
@@ -64,7 +56,7 @@ void run_batcher
 
 	// do the inverted half-cleaners. g is the first top wire in
 	// the group
-	LOG (Log::PROGRESS, s_batcher_network_log_id,
+	LOG (Log::PROGRESS, BatcherNetwork::logger,
 	     "Merger " << std::setw(3) << m << " half-cleaners @ "
 	     << epoch_time);
 	
@@ -87,7 +79,7 @@ void run_batcher
 	// now we shadow m with the C-T m in here
 	for (unsigned m = M/2; m >= 2; m >>= 1) {
 	    
-	    LOG(Log::PROGRESS, s_batcher_network_log_id,
+	    LOG(Log::PROGRESS, BatcherNetwork::logger,
 		"Merger " << std::setw(3) << m_outer
 		<< ", bitonic sorter level "
 		<< std::setw (3) << lgN_floor(m) << " @ "

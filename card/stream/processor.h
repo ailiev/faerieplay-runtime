@@ -31,22 +31,36 @@
 @paramm in_order the sequence of indices to read in.
 @paramm
 */
+
+// degrees of freedom:
+// 1 - batch size N
+// 2 - itemproc is filter (in->out), generate (->out), or absorb (in->)
+//       decides: - how many FlatIO's need to be provided (can be achieved through
+//                  boost::optional or pointers.
+//                - how itemproc shoud be called: with 2 or 3 params.
+/// @param MkObjRange type of a function (object) which we will use to make a
+/// range to send to FlatIO::write. If the obj_batch_t is a container, it itself
+/// is a range, so we use identity<>. If obj_batch_t is a scalar ByteBuffer,
+/// we'll use a scalar_range to wrap it.
 template <class ItemProc,
 	  class StreamOrder,
 	  std::size_t N,
 	  class IdxBatch=boost::array<size_t, N>,
-	  class ObjBatch=boost::array<ByteBuffer, N>
+	  class ObjBatch=boost::array<ByteBuffer, N>,
+	  class MkOutObjsT=identity<ObjBatch>
 >
 struct stream_processor {
     
-    static void stream_process (ItemProc & itemproc,
-				const StreamOrder & order,
-				FlatIO & in,
-				FlatIO & out)
-	{
-	    typedef IdxBatch idx_batch_t;
-	    typedef ObjBatch obj_batch_t;
+    typedef IdxBatch idx_batch_t;
+    typedef ObjBatch obj_batch_t;
+
     
+    static void process (ItemProc & itemproc,
+			 const StreamOrder & order,
+			 FlatIO * in,
+			 FlatIO * out,
+			 const MkOutObjsT & mk_out_objs = identity<obj_batch_t>())
+	{
 	    // read in the next needed items, apply the itemproc to them, and
 	    // write them out again
 	    typename boost::range_iterator<StreamOrder>::type idxsi; // an iterator
@@ -59,12 +73,20 @@ struct stream_processor {
 	
 		obj_batch_t objs, f_objs;
 	
-		in.read (idxs.first,
-			 objs.begin());
+		if (in) {
+		    // if objs is an array, mk_out_objs should be
+		    // identity<array...>
+		    // if objs is a scalar ByteBuffer, mk_out_objs should be
+		    // addressof<ByteBuffer>
+		    in->read (idxs.first,
+			      mk_out_objs(objs));
+		}
 	
 		itemproc (idxs.first, objs, f_objs);
 	
-		out.write (idxs.second, f_objs.begin());
+		if (out) {
+		    out->write (idxs.second, f_objs);
+		}
 	    }
 	}
 };
@@ -76,35 +98,48 @@ template <class ItemProc,
 	  class StreamOrder>
 struct stream_processor<ItemProc,StreamOrder,1>
 {
-    static void stream_process (
+    typedef addressof<ByteBuffer> mk_out_obj_t;
+    
+    static void process (
 	ItemProc & itemproc,
 	const StreamOrder & order,
-	FlatIO & in,
-	FlatIO & out)
+	FlatIO * in,
+	FlatIO * out)
 	{
-	    typedef size_t	idx_batch_t;
-	    typedef ByteBuffer  obj_batch_t;
-    
-	    // read in the next needed items, apply the itemproc to them, and
-	    // write them out again
-	    typename boost::range_iterator<StreamOrder>::type idxsi; // an iterator	    
-    
-	    for (idxsi = boost::const_begin(order);
-		 idxsi != boost::const_end (order);
-		 idxsi++)
-	    {
-		std::pair<idx_batch_t, idx_batch_t> idxs = *idxsi;
-	
-		obj_batch_t objs, f_objs;
-	
-		in.read (idxs.first,
-			 objs);
-	
-		itemproc (idxs.first, objs, f_objs);
-	
-		out.write (idxs.second, f_objs);
-	    }
+	    stream_processor<
+		ItemProc, StreamOrder, 1,
+		size_t, ByteBuffer,
+		mk_out_obj_t
+		>
+		::process
+		(
+		    itemproc, order, in, out, addressof<ByteBuffer>()
+		    );
 	}
+
+// 	    typedef size_t	idx_batch_t;
+// 	    typedef ByteBuffer  obj_batch_t;
+    
+// 	    // read in the next needed items, apply the itemproc to them, and
+// 	    // write them out again
+// 	    typename boost::range_iterator<StreamOrder>::type idxsi; // an iterator	    
+    
+// 	    for (idxsi = boost::const_begin(order);
+// 		 idxsi != boost::const_end (order);
+// 		 idxsi++)
+// 	    {
+// 		std::pair<idx_batch_t, idx_batch_t> idxs = *idxsi;
+	
+// 		obj_batch_t objs, f_objs;
+	
+// 		in.read (idxs.first,
+// 			 objs);
+	
+// 		itemproc (idxs.first, objs, f_objs);
+	
+// 		out.write (idxs.second, f_objs);
+// 	    }
+// 	}
 };
 
 template <class ItemProc,
@@ -113,11 +148,11 @@ template <class ItemProc,
 void stream_process (
     ItemProc & itemproc,
     const StreamOrder & order,
-    FlatIO & in,
-    FlatIO & out,
+    FlatIO * in,
+    FlatIO * out,
     boost::mpl::size_t<N>)
 {
-    stream_processor<ItemProc,StreamOrder,N>::stream_process
+    stream_processor<ItemProc,StreamOrder,N>::process
 	(itemproc, order, in, out);
 }
 
@@ -138,13 +173,13 @@ struct stream_processor_itr
 {
     static void process (ItemProc & itemproc,
 		  const StreamOrder & order,
-		  FlatIO & in,
-		  FlatIO & out,
+		  FlatIO * in,
+		  FlatIO * out,
 		  boost::mpl::size_t<N> n)
 	{
 	    stream_process (
 		itemproc,
-		pir::make_transform_range (
+		pir::transform_range (
 		    order,
 		    std::ptr_fun (scalar2pair<IdxBatch>)),
 		in, out,
@@ -158,8 +193,8 @@ template <class ItemProc,
 	  std::size_t N>
 void stream_process_itr (ItemProc & itemproc,
 			 const StreamOrder & order,
-			 FlatIO & in,
-			 FlatIO & out,
+			 FlatIO * in,
+			 FlatIO * out,
 			 boost::mpl::size_t<N> n)
 {
     stream_processor_itr<ItemProc,StreamOrder,N>::process (itemproc, order, in, out, n);
@@ -174,8 +209,8 @@ template <class ItemProc,
 	  class StreamOrder>
 void stream_process_itr (ItemProc & itemproc,
 			 const StreamOrder & order,
-			 FlatIO & in,
-			 FlatIO & out
+			 FlatIO * in,
+			 FlatIO * out
     )
 {
     using namespace boost::lambda;
