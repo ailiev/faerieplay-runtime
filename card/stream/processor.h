@@ -118,64 +118,6 @@ struct stream_processor<ItemProc,StreamOrder,1>
 
 
 
-#if 0
-
-
-// and a front-end function to do the template param resolution
-template <class ItemProc,
-	  class StreamOrder,
-	  std::size_t N>
-void stream_process (
-    ItemProc & itemproc,
-    const StreamOrder & order,
-    FlatIO * in,
-    FlatIO * out,
-    boost::mpl::size_t<N>)
-{
-    stream_processor<ItemProc,StreamOrder,N>::process
-	(itemproc, order, in, out);
-}
-
-
-
-
-/** a convenience version where the input and output orders are the same
-    @param N the batch size
-    @param StreamOrder an iterator_range with iterator pointing to
-    boost::array<size_t, N>
-*/
-template <class ItemProc,
-	  class StreamOrder,
-	  std::size_t N,
-	  class IdxBatch=boost::array<size_t, N> // This can be specified by
-						 // users, eg. to use a scalar
-						 // instead of an array if N=1
->
-struct stream_processor_itr
-{
-    static void process (ItemProc & itemproc,
-		  const StreamOrder & order,
-		  FlatIO * in,
-		  FlatIO * out,
-		  boost::mpl::size_t<N> n)
-	{
-	    stream_process (
-		itemproc,
-		pir::make_transform_range (
-		    order,
-		    std::ptr_fun (scalar2pair<IdxBatch>)),
-		in, out,
-		n);
-	}
-};
-
-
-
-
-#endif
-
-
-
 
 // so, can have a range-transform function, which takes the specialized order
 // range for this particular invocation, and transforms it into the general
@@ -213,18 +155,7 @@ void stream_process (ItemProc & itemproc,
 		    boost::mpl::size_t<1>());
 }
 
-    
-// and convenience overload for where N=1, since function templates cannot have
-// default values
-// template <class ItemProc,
-// 	  class StreamOrder>
-// void stream_process_no_permute (ItemProc & itemproc,
-// 				const StreamOrder & order,
-// 				FlatIO * in,
-// 				FlatIO * out)
-// {
-//     stream_process_itr (itemproc, order, in, out, size_t<1>());
-// }
+
 
 
 
