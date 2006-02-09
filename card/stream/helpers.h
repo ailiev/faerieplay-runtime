@@ -49,15 +49,6 @@ private:
 };
 
 
-// make a stream processing order range, with identical input and output
-// indices, and counting from 0 to N
-pir::transform_range<boost::iterator_range<boost::counting_iterator<index_t> >,
-		     scalar2pair <index_t> >
-zero_to_n (index_t N)
-{
-    return make_pair_range (pir::make_counting_range (0U, N));
-}
-
 
 template <class BasicProc>
 basictype_itemproc<BasicProc>
@@ -151,6 +142,16 @@ make_pair_range (const Range& r)
 
     return pir::make_transform_range (r,
 				      scalar2pair<val_t>());
+}
+
+
+/// make a stream processing order range, with identical input and output
+/// indices, and counting from 0 to N
+pir::transform_range<boost::iterator_range<boost::counting_iterator<index_t> >,
+		     scalar2pair <index_t> >
+zero_to_n (index_t N)
+{
+    return make_pair_range (pir::make_counting_range (0U, N));
 }
 
 

@@ -6,6 +6,8 @@
 #include <boost/lambda/lambda.hpp>
 
 #include <boost/mpl/size_t.hpp>
+#include <boost/mpl/greater.hpp>
+#include <boost/mpl/if.hpp>
 
 #include <pir/common/utils.h>
 #include <pir/common/range-utils.h>
@@ -49,17 +51,36 @@
 /// range to send to FlatIO::write. If the obj_batch_t is a container, it itself
 /// is a range, so we use identity<>. If obj_batch_t is a scalar ByteBuffer,
 /// we'll use a scalar_range to wrap it.
+
+
+// my first metafunction!
+/** define a type as an array if N>1
+ * @param Scalar the basic type
+ * @param N how many of the scalars
+ * @return if N = 1, returns Scalar, otherwise boost::array<Scalar, N>
+ */
+template <class Scalar, size_t N>
+struct make_maybe_array
+{
+    using boost::mpl::if_;
+    using boost::mpl::greater;
+    using boost::mpl::size_t;
+    
+    typedef typename if_< typename greater< size_t<N>,
+					    size_t<1> >::type,
+			  boost::array<Scalar, N>,
+			  Scalar >			    ::type	type;
+};
+
+
 template <class ItemProc,
 	  class StreamOrder,
-	  std::size_t N,
-	  class IdxBatch=boost::array<size_t, N>,
-	  class ObjBatch=boost::array<ByteBuffer, N>
->
+	  std::size_t B>	// the batch size
 struct stream_processor {
     
-    typedef IdxBatch idx_batch_t;
-    typedef ObjBatch obj_batch_t;
-
+    typedef typename make_maybe_array<size_t, B>::type	    idx_batch_t;
+    typedef typename make_maybe_array<ByteBuffer, B>::type  obj_batch_t;
+    
     typedef typename boost::range_iterator<StreamOrder>::type order_itr_t;
     
     static void process (ItemProc & itemproc,
@@ -101,20 +122,20 @@ struct stream_processor {
 
 // specialize for case where N=1, dropping all the array and just using straight
 // scalar.
-template <class ItemProc,
-	  class StreamOrder>
-struct stream_processor<ItemProc,StreamOrder,1>
-{
-    static void process (
-	ItemProc & itemproc,
-	const StreamOrder & order,
-	FlatIO * in,
-	FlatIO * out)
-	{
-	    stream_processor<ItemProc, StreamOrder,  1,  size_t,ByteBuffer>
-		::process (itemproc, order, in, out);
-	}
-};
+// template <class ItemProc,
+// 	  class StreamOrder>
+// struct stream_processor<ItemProc,StreamOrder,1>
+// {
+//     static void process (
+// 	ItemProc & itemproc,
+// 	const StreamOrder & order,
+// 	FlatIO * in,
+// 	FlatIO * out)
+// 	{
+// 	    stream_processor<ItemProc, StreamOrder,  1,  size_t,ByteBuffer>
+// 		::process (itemproc, order, in, out);
+// 	}
+// };
 
 
 
