@@ -70,6 +70,9 @@ public:
     void write_clear (index_t i, const ByteBuffer& val)
 	throw (host_exception, comm_exception);
     
+
+    class dummy_fetches_stream_prog;
+    friend class dummy_fetches_stream_prog;
     
 private:
 
@@ -196,7 +199,6 @@ public:
 	{
 	    _arr->write_clear (_T_index, i, val);
 	}
-    
     
 private:
     // the array

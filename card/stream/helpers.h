@@ -92,11 +92,16 @@ struct generate_proc_adapter {
 	: f(proc)
 	{}
     
-    void operator() (index_t i, const ByteBuffer& in, ByteBuffer & out)
+    void operator() (index_t i, const ByteBuffer& in, ByteBuffer & out) const
 	{
 	    out = f ();
 	}
     
+    void operator() (index_t i, const ByteBuffer& in, ByteBuffer & out)
+	{
+	    out = f ();
+	}
+
     ItemProc f;
 };
 
@@ -133,25 +138,92 @@ make_aggregate_proc_adapter (const ItemProc& proc)
 }
 
 
+
+// function object to convert a scalar to an array of N items with that scalar
+// in each index.
+template <class T, size_t N>
+struct scalar2array : public std::unary_function<T, boost::array<T,N> >
+{
+    boost::array<T,N> operator () (const T& t) const
+	{
+	    boost::array<T,N> answer;
+	    for (unsigned i=0; i < N; i++)
+	    {
+		answer[i] = t;
+	    }
+	    return answer;
+	}
+};
+
+
+
+
 template <class Range>
-pir::transform_range<Range,
-		     scalar2pair <typename boost::range_value<Range>::type> >
+#define PARENTTYPE \
+boost::iterator_range<boost::transform_iterator<scalar2pair<typename boost::range_value<Range>::type>, \
+                                                typename boost::range_iterator<Range>::type> >
+struct pair_range : public PARENTTYPE
+{
+    typedef PARENTTYPE parent_t;
+    typedef typename boost::range_value<Range>::type val_t;
+    
+    pair_range (const Range& r)
+	: parent_t (pir::make_transform_range (r,
+					       scalar2pair<val_t>()))
+	{}
+};
+#undef PARENTTYPE
+
+
+template <class Range>    
+pair_range<Range>
 make_pair_range (const Range& r)
 {
-    typedef typename boost::range_value<Range>::type val_t;
+    return pair_range<Range> (r);
+}
 
-    return pir::make_transform_range (r,
-				      scalar2pair<val_t>());
+
+template <class Range, size_t N>
+#define PARENTTYPE \
+boost::iterator_range<boost::transform_iterator<scalar2array<typename boost::range_value<Range>::type, N>, \
+                                                typename boost::range_iterator<Range>::type> >
+struct array_range : PARENTTYPE
+{
+    typedef PARENTTYPE parent_t;
+    typedef typename boost::range_value<Range>::type val_t;
+   
+    array_range (const Range& r)
+	: parent_t (pir::make_transform_range (r,
+					       scalar2array<val_t, N> ()))
+	{}
+};
+#undef PARENTTYPE
+
+template <class Range, size_t N>
+array_range<Range,N>
+make_array_range (const Range& r,
+		  boost::mpl::size_t<N>)
+{
+    return array_range<Range,N> (r);
 }
 
 
 /// make a stream processing order range, with identical input and output
 /// indices, and counting from 0 to N
-pir::transform_range<boost::iterator_range<boost::counting_iterator<index_t> >,
-		     scalar2pair <index_t> >
+pair_range<pir::counting_range<index_t> >
 zero_to_n (index_t N)
 {
     return make_pair_range (pir::make_counting_range (0U, N));
+}
+
+// another step up: this range iterates a pair of arrays, with the scalar
+// duplicate into all that.
+template <size_t I>
+pair_range<array_range<pir::counting_range<index_t>,I> >
+zero_to_n (index_t N)
+{
+    return make_pair_range (make_array_range (pir::make_counting_range (0U, N),
+					      boost::mpl::size_t<I>()));
 }
 
 

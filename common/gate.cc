@@ -356,7 +356,7 @@ ostream& operator<< (ostream & out, const gate_t & g) {
     out << endl;
 
     out << "comm: ";
-    out << g.comment << endl << endl;
+    out << g.comment << endl;
 
     out << "depth: ";
     out << g.depth << endl;

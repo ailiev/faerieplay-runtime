@@ -131,6 +131,13 @@ private:
     };
 
     friend class Comparator;
+
+
+    struct tag_remover;
+    friend struct tag_remover;	// to read TAGSIZE
+
+    struct tagger;
+    friend struct tagger;	// for TAGSIZE
     
     //
     // helpers

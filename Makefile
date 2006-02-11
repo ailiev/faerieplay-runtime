@@ -11,5 +11,8 @@ all: subdirs
 clean: subdirs
 install: subdirs
 
+doc: doxygen.project
+	doxygen doxygen.project
+
 .PHONY: subdirs $(SUBDIRS)
 

@@ -14,6 +14,9 @@
 #include <pir/card/io_flat.h>
 #include <pir/card/io_filter_encrypt.h>
 
+#include <stream/processor.h>
+#include <stream/helpers.h>
+
 #include "utils.h"
 #include "array.h"
 #include "batcher-permute.h"
@@ -39,13 +42,13 @@ using std::max;
 #include "pir/card/configs.h"
 
 
-using namespace std;
-
 int main (int argc, char *argv[])
 {
     // create an array, fill it in with provided data from a text file, then run
     // reads/updates from another text file
 
+    using namespace std;
+    
     init_default_configs ();
     g_configs.cryptprov = configs::CryptAny;
     
@@ -57,7 +60,7 @@ int main (int argc, char *argv[])
 #include "array-test-sizes.h"
     
     Array test ("test-array",
-		Just (std::make_pair ((size_t)ARR_ARRAYLEN, (size_t)ARR_OBJSIZE)),
+		Just (make_pair ((size_t)ARR_ARRAYLEN, (size_t)ARR_OBJSIZE)),
 		prov_fact.get());
     
     ifstream cmds ("array-test-cmds.txt");
@@ -90,7 +93,7 @@ int main (int argc, char *argv[])
 	}
     }
 
-    clog << "Array test run finished @ " << epoch_time << endl;
+    cout << "Array test run finished @ " << epoch_time << endl;
 
 }
 
@@ -103,18 +106,19 @@ using boost::none;
 
 
 namespace {
-    unsigned s_log_id = Log::add_module ("array");
+    Log::logger_t logger = Log::makeLogger ("array",
+					    boost::none, boost::none);    
 }
 
 
 
-// instantiate the static array map
-Array::map_t Array::_arrays;
-Array::des_t Array::_next_array_num = 1;
-
-
 
 namespace {
+    // instantiate the static array map
+    Array::map_t Array::_arrays;
+    Array::des_t Array::_next_array_num = 1;
+
+
     const string ARRAY_NAME = "-array",
 	IDXS_NAME = "-working-idxs",
 	OBJS_NAME = "-working-objs";
@@ -198,9 +202,10 @@ Array::Array (const string& name,
     {
 	ByteBuffer zero (_elem_size);
 	zero.set (0);
-	for (index_t i=0; i < N; i++) {
-	    write_clear (i, zero);
-	}
+	stream_process (make_generate_proc_adapter (make_fconst(zero)),
+			zero_to_n (N),
+			NULL,
+			&_array_io);
     }
 
     repermute();
@@ -311,6 +316,80 @@ void Array::write (index_t idx, size_t off,
 }
 
 
+class Array::dummy_fetches_stream_prog
+{
+
+    
+    // named indexers into the above arrays
+    enum {
+	IDX=0,			// the item index
+	ITEM=1			// the actual item
+    };
+	    
+public:
+
+    dummy_fetches_stream_prog (index_t target_idx,
+			       const optional <pair<size_t, ByteBuffer> > & new_val,
+			       Array * owner)
+	: _target_idx (target_idx),
+	  _new_val (new_val),
+	  _owner (owner)
+	{}
+    
+    void operator() (const boost::array<index_t,2>& idxs,
+		     const boost::array<ByteBuffer,2>& objs,
+		     boost::array<ByteBuffer,2>& o_objs)
+	{
+	    index_t T_i = bb2basic<index_t> (objs[IDX]);
+	    const ByteBuffer & item = objs[ITEM];
+
+	    //	o_objs[IDX] is not written out
+	    
+	    if (T_i == _target_idx) {
+		assert (_the_item.len() == 0); // we should see 'idx' only once
+
+		_the_item = ByteBuffer (item, ByteBuffer::DEEPCOPY);
+
+		if (_new_val) {
+		    // all sizes need to be the same! caller should ensure this
+		    assert (_new_val->second.len() == _owner->_elem_size);
+		
+		    ByteBuffer towrite = _new_val->second;
+		    // FIXME: ignoring the offset (new_val->first) for now
+		    o_objs[ITEM] = towrite;
+		}
+	    }
+
+	    else {
+		// TIMING:
+		if (_new_val) {
+		    // will be written out re-encrypted with a new IV
+		    o_objs[ITEM] = item;
+		}
+	    }
+	    
+	}
+
+    ByteBuffer getTheItem ()
+	{
+	    assert (((void)"dummy_fetches_stream_prog should have found the target item",
+		     _the_item.len() > 0));
+
+	    return _the_item;
+	}
+    
+private:
+
+    index_t _target_idx;
+    const optional <pair<size_t, ByteBuffer> > & _new_val;
+
+    Array * _owner;
+
+    ByteBuffer _the_item;
+};
+
+
+
 
 /// retrieve or update an object, while doing all the necesary re-fetches.
 /// @param idx the physical index to read/write
@@ -321,55 +400,20 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
 				    optional < pair<size_t, ByteBuffer> > new_val)
     throw (better_exception)
 {
-    ByteBuffer obj, the_obj;
+    boost::array<FlatIO*,2> in_ios = { &_workarea.idxs, &_workarea.items };
+    boost::array<FlatIO*,2> out_ios = { &_workarea.idxs, NULL };
     
-    // TODO: if we are reading, no need to decrypt all the objects, but just the
-    // real one at the end.
-    
-    unsigned T_i = 0;
+    dummy_fetches_stream_prog prog (idx, new_val, this);
 
-    // go through all the _workarea indices and objects. if we have new_val,
-    // re-write every item (not index); otherwise just read and keep the one
-    // numbered idx, which should be there after append_new_working_item()
-    for (index_t i = 0; i < _num_retrievals; i++) {
+    stream_process (prog,
+		    zero_to_n<2> (_num_retrievals),
+		    in_ios,
+		    out_ios,
+		    boost::mpl::size_t<1> (), // number of items/idxs in an
+					      // invocation of prog
+		    boost::mpl::size_t<2> ()); // the number of I/O streams
 
-	standard_prefetch_touched (i, true, true);
-	
-	T_i = hostio_read_int (_workarea.idxs, i);
-	_workarea.items.read (i, obj);
-
-	if (T_i == idx) {
-	    assert (the_obj.len() == 0);
-	    the_obj = ByteBuffer (obj, ByteBuffer::DEEPCOPY);
-	    if (new_val) {
-		// all sizes need to be the same! caller should ensure this
-		assert (new_val->second.len() == _elem_size);
-		// may not have _elem_size for now!
-//		assert (new_val->second.len() == the_obj.len());
-		
-		ByteBuffer towrite = new_val->second;
-		// FIXME: ignoring the offset (new_val->first) for now
-		_workarea.items.write (i, towrite);
-	    }
-	}
-
-	else {
-	    // TIMING:
-	    if (new_val) {
-		// written out re-encrypted with a new IV
-		_workarea.items.write (i, obj);
-	    }
-	}
-
-    }
-
-    _workarea.idxs.flush ();
-    _workarea.items.flush ();
-
-    // we must have read the object in during the above loop
-    assert (the_obj.len() > 0);
-
-    return the_obj;
+    return prog.getTheItem ();
 }
 
 
@@ -385,19 +429,15 @@ void Array::repermute ()
 #ifndef NO_REFETCHES
     {
 	// copy values out of the working area and into the main array
-	index_t idx;
-	ByteBuffer obj;
+
+	ByteBuffer item, idxbuf;
 	for (index_t i=0; i < _num_retrievals; i++)
 	{
-	    standard_prefetch_touched (i, true, true);
+	    _workarea.idxs.read  (i, idxbuf);
+	    _workarea.items.read (i, item);
 
-	    idx = hostio_read_int (_workarea.idxs, i);
-	    _workarea.items.read (i, obj);
-
-	    _array_io.write (idx, obj);
+	    _array_io.write (bb2basic<index_t> (idxbuf), item);
 	}
-
-	_array_io.flush();
     }
 #endif // NO_REFETCHES
 	
@@ -417,19 +457,11 @@ void Array::repermute ()
 		shared_ptr<SymWrapper> (new SymWrapper (_prov_fact)))));
     
     // copy values across
-    {
-	ByteBuffer obj;
-	for (index_t i=0; i < N; i++) {
-	    standard_prefetch (_array_io,
-			       i,
-			       _obj_batchsize,
-			       N);
-	    
-	    _array_io.read (i, obj);
-	    p2_cont_io->write (i, obj);
-	}
-	p2_cont_io->flush();
-    }
+    stream_process ( identity_itemproc,
+		     zero_to_n (N),
+		     &_array_io,
+		     &(*p2_cont_io) );
+
     
     // run the re-permutation on the new container
     shared_ptr<ForwardPermutation> reperm (new RePermutation (*_p, *p2));
@@ -437,7 +469,7 @@ void Array::repermute ()
     Shuffler shuffler  (p2_cont_io, reperm, N);
     shuffler.shuffle ();
 
-    p2_cont_io->flush();
+//    p2_cont_io->flush();
     
     // install the new parameters
     _array_io = *p2_cont_io;
@@ -485,8 +517,6 @@ void Array::append_new_working_item (index_t idx)
     bool have_idx = false;
     for (index_t i = 0; i < _num_retrievals; i++) {
 	
-	standard_prefetch_touched (i, true, false);
-
 	T_i = hostio_read_int (_workarea.idxs, i);
 
 	// adjust the rand_idx one higher if this touched index is less than
@@ -510,34 +540,12 @@ void Array::append_new_working_item (index_t idx)
     _array_io.read (to_append, obj);
 
     hostio_write_int (_workarea.idxs, _num_retrievals, to_append);
-    _workarea.idxs.flush();
     _workarea.items.write (_num_retrievals, obj);
-    _workarea.items.flush();
 
     // maintain invariant on the _workarea and _num_retrievals
     _num_retrievals++;
 }
 
-
-void Array::standard_prefetch_touched (index_t i,
-				       bool do_idxs, bool do_objs)
-    throw (better_exception)
-{
-    return;
-    
-    if (do_idxs) {
-	standard_prefetch (_workarea.idxs,
-			   i,
-			   _idx_batchsize,
-			   _num_retrievals);
-    }
-    if (do_objs) {
-	standard_prefetch (_workarea.items,
-			   i,
-			   _obj_batchsize,
-			   _num_retrievals);
-    }
-}
 
 
 /*

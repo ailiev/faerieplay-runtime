@@ -114,10 +114,10 @@ int main (int argc, char *argv[])
 						      (provfact.get())))));
 
 	    // and transfer each object in the container
-	    stream_process_itr (identity_itemproc,
-				pir::make_counting_range (0U, num_objs),
-				io,
-				&temp);
+	    stream_process ( identity_itemproc,
+			     zero_to_n (num_objs),
+			     io,
+			     &temp );
 
 	    // and move encrypted container back to original name.
 	    *io = temp;

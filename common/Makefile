@@ -21,7 +21,7 @@ libsfdl-common.a: $(LIBOBJS)
 
 
 install: build
-	install $(LIBS) $(LEEDS_LIB)
+	$(INSTALL) $(LIBS) $(LEEDS_LIB)
 
 
 include ../footer.make

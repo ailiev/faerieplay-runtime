@@ -1,4 +1,4 @@
-PROJECT_NAME           = "PIR"
+PROJECT_NAME           = "SFDL Runtime"
 PROJECT_NUMBER         = 1
 OUTPUT_DIRECTORY       = src-docs
 EXTRACT_ALL            = YES

@@ -17,6 +17,64 @@
 #ifndef _STREAM_PROCESSOR_H
 #define _STREAM_PROCESSOR_H
 
+
+
+
+template <class IdxsType,
+	  class ObjsType>
+void do_read (const IdxsType& idxs, ObjsType& o_objs, FlatIO * & io)
+{
+    // this will resolve to either the scalar or list version of FlatIO::read
+    if (io) io->read (idxs, o_objs);
+}
+
+template <class IdxsType,
+	  class ObjsType,
+	  size_t I>
+void do_read (const IdxsType& idxs, ObjsType& o_objs, boost::array<FlatIO*, I> & ios)
+{
+    typename IdxsType::const_iterator idxsi;
+    typename ObjsType::iterator objsi;
+    typename boost::array<FlatIO*, I>::iterator iosi;
+    
+    for (idxsi = boost::begin(idxs),
+	     objsi = boost::begin(o_objs),
+	     iosi = boost::begin (ios);
+	 idxsi != boost::end (idxs);
+	 idxsi++, objsi++, iosi++)
+    {
+	if (*iosi) (*iosi)->read (*idxsi, *objsi);
+    }
+}
+
+template <class IdxsType,
+	  class ObjsType>
+void do_write (const IdxsType& idxs, const ObjsType& objs, FlatIO * & io)
+{
+    if (io) io->write (idxs, objs);
+}
+
+template <class IdxsType,
+	  class ObjsType,
+	  size_t I>
+void do_write (const IdxsType& idxs, const ObjsType& objs, boost::array<FlatIO*, I> & ios)
+{
+    typename IdxsType::const_iterator idxsi;
+    typename ObjsType::const_iterator objsi;
+    typename boost::array<FlatIO*, I>::iterator iosi;
+    
+    for (idxsi = boost::begin(idxs),
+	     objsi = boost::begin(objs),
+	     iosi = boost::begin (ios);
+	 idxsi != boost::end (idxs);
+	 idxsi++, objsi++, iosi++)
+    {
+	if (*iosi) (*iosi)->write (*idxsi, *objsi);
+    }
+}
+
+
+
 /**
    Process a container in stream mode.
    For all the template parameters, boost::array<X,N> can be replaced by just
@@ -62,35 +120,41 @@
 template <class Scalar, size_t N>
 struct make_maybe_array
 {
-    using boost::mpl::if_;
-    using boost::mpl::greater;
-    using boost::mpl::size_t;
-    
-    typedef typename if_< typename greater< size_t<N>,
-					    size_t<1> >::type,
-			  boost::array<Scalar, N>,
-			  Scalar >			    ::type	type;
+    typedef typename boost::mpl::if_< typename boost::mpl::greater< boost::mpl::size_t<N>,
+								    boost::mpl::size_t<1> >::type,
+				      boost::array<Scalar, N>,
+				      Scalar >::type
+    type;
 };
 
 
 template <class ItemProc,
 	  class StreamOrder,
-	  std::size_t B>	// the batch size
+	  std::size_t B,	// the batch size
+	  std::size_t I>	// the number of I/O streams
 struct stream_processor {
     
-    typedef typename make_maybe_array<size_t, B>::type	    idx_batch_t;
-    typedef typename make_maybe_array<ByteBuffer, B>::type  obj_batch_t;
+    // the types for each IO stream
+    typedef typename make_maybe_array<size_t,     B>::type  io_idx_batch_t;
+    typedef typename make_maybe_array<ByteBuffer, B>::type  io_obj_batch_t;
+
+    // and the overall types
+    // each one is either X, array<X,(I or B)> or array<array<X,B>,I>, for X in
+    // {size_t, ByteBuffer}
+    typedef typename make_maybe_array<io_idx_batch_t, I>::type	idx_batch_t;
+    typedef typename make_maybe_array<io_obj_batch_t, I>::type  obj_batch_t;
+
+    // the type of the IO stream, either a single or an array of FlatIO*
+    typedef typename make_maybe_array<FlatIO*, I>::type io_t;
+    
     
     typedef typename boost::range_iterator<StreamOrder>::type order_itr_t;
     
     static void process (ItemProc & itemproc,
 			 const StreamOrder & order,
-			 FlatIO * in,
-			 FlatIO * out)
+			 io_t & in,
+			 io_t & out)
 	{
-	    // read in the next needed items, apply the itemproc to them, and
-	    // write them out again
-
 	    order_itr_t idxsi;
     
 	    for (idxsi = boost::const_begin (order);
@@ -100,25 +164,39 @@ struct stream_processor {
 		std::pair<idx_batch_t, idx_batch_t> idxs = *idxsi;
 	
 		obj_batch_t objs, f_objs;
-	
-		if (in) {
-		    // if objs is an array, mk_out_objs should be
-		    // boost::begin<array...>
-		    // if objs is a scalar ByteBuffer, mk_out_objs should be
-		    // addressof<ByteBuffer>
-		    in->read (idxs.first, objs);
-		}
+
+		do_read (idxs.first, objs, in);
 	
 		itemproc (idxs.first, objs, f_objs);
 	
-		if (out) {
-		    out->write (idxs.second, f_objs);
-		}
+		do_write (idxs.second, f_objs, out);
 	    }
 	}
+
+    static void process (const ItemProc & itemproc,
+			 const StreamOrder & order,
+			 io_t & in,
+			 io_t & out)
+	{
+	    order_itr_t idxsi;
+    
+	    for (idxsi = boost::const_begin (order);
+		 idxsi != boost::const_end (order);
+		 idxsi++)
+	    {
+		std::pair<idx_batch_t, idx_batch_t> idxs = *idxsi;
+	
+		obj_batch_t objs, f_objs;
+
+		do_read (idxs.first, objs, in);
+	
+		itemproc (idxs.first, objs, f_objs);
+	
+		do_write (idxs.second, f_objs, out);
+	    }
+	}    
 };
 
-		
 
 // specialize for case where N=1, dropping all the array and just using straight
 // scalar.
@@ -147,14 +225,37 @@ struct stream_processor {
 // versions of the processor function which has input and output indices identical.
 template <class ItemProc,
 	  class StreamOrder,
-	  std::size_t N>
+	  class IO,
+	  std::size_t B,
+	  std::size_t I>
 void stream_process (ItemProc & itemproc,
 		     const StreamOrder & order,
-		     FlatIO * in,
-		     FlatIO * out,
-		     boost::mpl::size_t<N> n)
+		     IO& in,
+		     IO& out,
+		     boost::mpl::size_t<B>,
+		     boost::mpl::size_t<I>)
 {
-    typedef stream_processor<ItemProc,StreamOrder,N> processor_class_t;
+    typedef stream_processor<ItemProc,StreamOrder,B,I> processor_class_t;
+
+    processor_class_t::process (itemproc,
+				 order,
+				 in, out);
+}
+
+// and with const proc
+template <class ItemProc,
+	  class StreamOrder,
+	  class IO,
+	  std::size_t B,
+	  std::size_t I>
+void stream_process (const ItemProc & itemproc,
+		     const StreamOrder & order,
+		     IO& in,
+		     IO& out,
+		     boost::mpl::size_t<B>,
+		     boost::mpl::size_t<I>)
+{
+    typedef stream_processor<ItemProc,StreamOrder,B,I> processor_class_t;
 
     processor_class_t::process (itemproc,
 				 order,
@@ -162,7 +263,7 @@ void stream_process (ItemProc & itemproc,
 }
 
 
-/** overloaded version for case where N=1
+/** overloaded versions for case where B=1 and I=1
 */
 
 template <class ItemProc,
@@ -173,6 +274,19 @@ void stream_process (ItemProc & itemproc,
 		     FlatIO * out)
 {
     stream_process (itemproc, order, in, out,
+		    boost::mpl::size_t<1>(),
+		    boost::mpl::size_t<1>());
+}
+
+template <class ItemProc,
+	  class StreamOrder>
+void stream_process (const ItemProc & itemproc,
+		     const StreamOrder & order,
+		     FlatIO * in,
+		     FlatIO * out)
+{
+    stream_process (itemproc, order, in, out,
+		    boost::mpl::size_t<1>(),
 		    boost::mpl::size_t<1>());
 }
 

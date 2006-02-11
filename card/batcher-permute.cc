@@ -28,6 +28,7 @@
 #include <exception>
 
 #include <boost/shared_ptr.hpp>
+#include <boost/range.hpp>
 
 #include <signal.h>		// for SIGTRAP
 
@@ -38,6 +39,9 @@
 
 #include <pir/card/lib.h>
 #include <pir/card/configs.h>
+
+#include "stream/processor.h"
+#include "stream/helpers.h"
 
 #include "utils.h"
 #include "batcher-network.h"
@@ -56,6 +60,8 @@ using boost::shared_ptr;
 static const std::string CLEARDIR = "clear",
     CRYPTDIR_BASE = "crypt";
 
+// 		    std::bind1st (std::mem_fun (&HostIO::outfilter),
+// 				  this)));
 
 
 #ifdef _TESTING_BATCHER_PERMUTE
@@ -188,57 +194,51 @@ void Shuffler::shuffle ()
 }
 
 
+// tag all items with their destination index
+struct Shuffler::tagger {
+
+    tagger (boost::shared_ptr<ForwardPermutation> & p)
+	: p(p)
+	{}
+	
+    void operator() (index_t i, const ByteBuffer& in, ByteBuffer& out) const
+	{
+	    index_t dest = p->p(i);
+
+	    out = realloc_buf (in, in.len() + TAGSIZE);
+	    memcpy ( out.data() + in.len() - TAGSIZE, &dest, TAGSIZE );
+	}
+
+    boost::shared_ptr<ForwardPermutation> & p;
+};
+
+
 
 void Shuffler::prepare () throw (better_exception)
 {
-    ByteBuffer current;
-    uint32_t dest;
-    
-    // tag all items with their destination index
-
-    for (index_t i=0; i < N; i++) {
-	standard_prefetch (*_io,
-			   i,
-			   _read_cache_size,
-			   N);
-
-	// read
-	_io->read (i, current);
-
-	// add tag, using 4 bytes at the end
-	dest = _p->p (i);
-	current = realloc_buf (current, current.len() + TAGSIZE);
-	memcpy ( current.data() + current.len() - TAGSIZE, &dest, TAGSIZE );
-	
-	// write
-	_io->write (i, current);
-    }
-
-    _io->flush ();
+    stream_process ( tagger(_p),
+		     zero_to_n (N),
+		     &(*_io),
+		     &(*_io));
 }
 
 
-void Shuffler::remove_tags () throw (hostio_exception, crypto_exception)
-{
-    ByteBuffer current;
+struct Shuffler::tag_remover {
+    
+    void operator() (index_t, const ByteBuffer& in, ByteBuffer& out) const
+	{
+	    out = in;
+		out.len() -= TAGSIZE;
+	}
+};
     
 
-    for (index_t i=0; i < N; i++) {
-	standard_prefetch (*_io,
-			   i,
-			   _read_cache_size,
-			   N);
-	// read
-	_io->read (i, current);
-
-	// just adjust the length
-	current.len() -= TAGSIZE;
-	
-	// write
-	_io->write (i, current);
-    }
-
-    _io->flush();
+void Shuffler::remove_tags () throw (hostio_exception, crypto_exception)
+{
+    stream_process (tag_remover(),
+		    zero_to_n (N),
+		    &(*_io),
+		    &(*_io));
 }
 
 
@@ -290,7 +290,7 @@ Shuffler::Comparator::~Comparator ()
 	 "~Comparator(), with _batch_size = " << _batch_size);
     
     if (_batch_size > 0) {
-	LOG (Log::DEBUG, logger,
+	LOG (Log::WARN, logger,
 	     "Comparator doing " << _batch_size
 	     << " remaing comparators at the end");
 	do_batch ();
@@ -301,12 +301,14 @@ void Shuffler::Comparator::build_idx_list (
     std::vector<index_t> & o_ids,
     const std::vector<comp_params_t>& comps)
 {
-    // PRE: o_oids has the right number of elts (2 * comps.size())
+    // o_ids should be preallocated
+    assert (o_ids.size() == 2 * comps.size());
+
     std::vector<comp_params_t>::const_iterator s;
     std::vector<index_t>::iterator idx = o_ids.begin();
     for (s = comps.begin(); s != comps.end(); s++) {
-	*idx++ = s->a;
-	*idx++ = s->b;
+	*idx = s->a; ++idx;
+	*idx = s->b; ++idx;
     }
 }
 
