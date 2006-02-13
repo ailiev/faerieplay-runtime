@@ -53,84 +53,11 @@
 
 static char *rcsid ="$Id$";
 
-using namespace std;
-
 using boost::shared_ptr;
 
 static const std::string CLEARDIR = "clear",
     CRYPTDIR_BASE = "crypt";
 
-// 		    std::bind1st (std::mem_fun (&HostIO::outfilter),
-// 				  this)));
-
-
-#ifdef _TESTING_BATCHER_PERMUTE
-
-#include <pir/card/io_filter_encrypt.h>
-
-
-void out_of_memory () {
-    cerr << "Out of memory!" << endl;
-    raise (SIGTRAP);
-    exit (EXIT_FAILURE);
-}
-
-
-
-int main (int argc, char * argv[]) {
-
-
-    // test: construct a container, encrypt it, permute it, and read
-    // out the values
-
-    init_default_configs ();
-    g_configs.cryptprov = configs::CryptAny;
-    
-    if ( do_configs (argc, argv) != 0 ) {
-	configs_usage (cerr, argv[0]);
-	exit (EXIT_SUCCESS);
-    }
-
-    auto_ptr<CryptoProviderFactory> prov_fact = init_crypt (g_configs);
-
-    size_t N = 64;
-
-    shared_ptr<SymWrapper>   io_sw (new SymWrapper (prov_fact.get()));
-
-    // split up the creation of io_ptr and its shared_ptr, so that we can deref
-    // io_ptr and pass it to IOFilterEncrypt. The shared_ptr would not be ready
-    // for the operator* at that point.
-    shared_ptr<FlatIO> io (new FlatIO ("permutation-test-ints",
-				       make_pair (N, sizeof(int))));
-    io->appendFilter (auto_ptr<HostIOFilter> (
-			  new IOFilterEncrypt (io.get(), io_sw)));
-
-    for (unsigned i = 0; i < N; i++) {
-	hostio_write_int (*io, i, i);
-    }
-    io->flush ();
-    
-    shared_ptr<TwoWayPermutation> pi (
-	new LRPermutation (lgN_ceil (N), 7, prov_fact.get()) );
-    pi->randomize ();
-
-    cout << "The permutation's mapping:" << endl;
-    write_all_preimages (cout, pi.get());
-    
-    Shuffler s (io, pi, N);
-    s.shuffle ();
-
-
-    cout << "And the network's result:" << endl;
-    for (unsigned i = 0; i < N; i++) {
-	unsigned j = hostio_read_int (*io, i);
-	cout << i << " -> " << j << endl;
-    }
-}
-
-
-
-#endif // _TESTING_BATCHER_PERMUTE
 
 //const size_t Shuffler::TAGSIZE = 4;
 
@@ -175,7 +102,7 @@ void Shuffler::shuffle ()
     {
 	// a batch element for the comparator is actually two objects
 	// make sure the batch size divides N.
-	unsigned batchsize = min (_read_cache_size/2, N-1);
+	unsigned batchsize = std::min (_read_cache_size/2, N-1);
 	while (N % batchsize != 0)
 	{
 	    batchsize--;
@@ -194,7 +121,7 @@ void Shuffler::shuffle ()
 }
 
 
-// tag all items with their destination index
+// tag an item with its destination index, at the end of the actual data
 struct Shuffler::tagger {
 
     tagger (boost::shared_ptr<ForwardPermutation> & p)
@@ -206,7 +133,7 @@ struct Shuffler::tagger {
 	    index_t dest = p->p(i);
 
 	    out = realloc_buf (in, in.len() + TAGSIZE);
-	    memcpy ( out.data() + in.len() - TAGSIZE, &dest, TAGSIZE );
+	    memcpy ( out.data() + in.len(), &dest, TAGSIZE );
 	}
 
     boost::shared_ptr<ForwardPermutation> & p;
@@ -218,8 +145,8 @@ void Shuffler::prepare () throw (better_exception)
 {
     stream_process ( tagger(_p),
 		     zero_to_n (N),
-		     &(*_io),
-		     &(*_io));
+		     _io.get(),
+		     _io.get());
 }
 
 
@@ -228,7 +155,7 @@ struct Shuffler::tag_remover {
     void operator() (index_t, const ByteBuffer& in, ByteBuffer& out) const
 	{
 	    out = in;
-		out.len() -= TAGSIZE;
+	    out.len() -= TAGSIZE;
 	}
 };
     
@@ -237,8 +164,8 @@ void Shuffler::remove_tags () throw (hostio_exception, crypto_exception)
 {
     stream_process (tag_remover(),
 		    zero_to_n (N),
-		    &(*_io),
-		    &(*_io));
+		    _io.get(),
+		    _io.get());
 }
 
 
@@ -268,7 +195,7 @@ void Shuffler::Comparator::operator () (index_t a, index_t b)
 void Shuffler::Comparator::do_batch ()
     throw (hostio_exception, crypto_exception)
 {
-    obj_list_t objs;
+    obj_list_t objs (_idxs_temp.size());
 
     // first build a list of index_t for all the records involved
     build_idx_list (_idxs_temp, _comparators);
@@ -363,16 +290,4 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
 	 "Batch list size at end is " << io_recs.size());
 
     
-}
-
-
-// transpose is used a bit loosely here
-// we just want to set V_[V[i]] = i for all indices i
-void transpose_vector (vector<index_t> & V_, const vector<index_t>& V) {
-
-    V_.resize (V.size());
-
-    for (unsigned i = 0; i < V.size(); i++) {
-	V_[V[i]] = i;
-    }
 }

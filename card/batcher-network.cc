@@ -13,6 +13,7 @@ using std::cout;
 using std::endl;
 using std::setw;
 
+Log::logger_t BatcherNetwork::logger; // declared extern in batcher-network.h
 
 INSTANTIATE_STATIC_INIT (BatcherNetwork);
 

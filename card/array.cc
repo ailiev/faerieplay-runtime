@@ -36,74 +36,14 @@ using std::max;
 
 
 
-#ifdef TESTING_ARRAY
-
-#include <fstream>
-#include "pir/card/configs.h"
-
-
-int main (int argc, char *argv[])
-{
-    // create an array, fill it in with provided data from a text file, then run
-    // reads/updates from another text file
-
-    using namespace std;
-    
-    init_default_configs ();
-    g_configs.cryptprov = configs::CryptAny;
-    
-    do_configs (argc, argv);
-
-    auto_ptr<CryptoProviderFactory> prov_fact = init_crypt (g_configs);
-
-    
-#include "array-test-sizes.h"
-    
-    Array test ("test-array",
-		Just (make_pair ((size_t)ARR_ARRAYLEN, (size_t)ARR_OBJSIZE)),
-		prov_fact.get());
-    
-    ifstream cmds ("array-test-cmds.txt");
-//    cmds.exceptions (ios::badbit | ios::failbit);
-    
-    string cmd, idx_s, val;
-
-    unsigned i = 0;
-
-    while (getline (cmds, cmd) &&
-	   getline (cmds, idx_s))
-    {
-	index_t idx = atoi (idx_s.c_str());
-	
-	cout << endl << "Command " << i++ << ": " << cmd << " [" << idx << "] ";
-
-	if (cmd == "write") {
-	    getline (cmds, val);
-	    cout << "(" << val << ")";
-	    test.write (idx, 0, ByteBuffer (val));
-	    cout << " --> ()";
-	}
-	else if (cmd == "read") {
-	    cout << "()";
-	    ByteBuffer res = test.read (idx);
-
-	    cout << " --> (";
-	    cout.write (res.cdata(), res.len());
-	    cout << ")" << endl;
-	}
-    }
-
-    cout << "Array test run finished @ " << epoch_time << endl;
-
-}
-
-
-#endif // TESTING_ARRAY
-
-
 using boost::optional;
 using boost::none;
 
+
+// options to use a watered down algorithm, if the full and proper one is
+// failing.
+// #define NO_REFETCHES
+// #define NO_ENCRYPT
 
 namespace {
     Log::logger_t logger = Log::makeLogger ("array",
@@ -190,11 +130,13 @@ Array::Array (const string& name,
     // add encrypt/decrypt filters to all the IO objects.
     FlatIO * ios [] = { &_array_io, &_workarea.idxs, &_workarea.items };
     for (unsigned i=0; i < ARRLEN(ios); i++) {
+#ifndef NO_ENCRYPT
 	ios[i]->appendFilter (
 	    auto_ptr<HostIOFilter>
 	    (new IOFilterEncrypt (ios[i],
 				  shared_ptr<SymWrapper>
 				  (new SymWrapper (_prov_fact)))));
+#endif
     }
 
     // if array is new, fill out with nulls.
@@ -250,7 +192,6 @@ void Array::write_clear (index_t idx, const ByteBuffer& val)
 }
 
 
-//#define NO_REFETCHES
 
 
 ByteBuffer Array::read (index_t idx)
@@ -296,7 +237,6 @@ void Array::write (index_t idx, size_t off,
 
 #ifdef NO_REFETCHES
     _array_io.write (p_idx, val);
-    _array_io.flush ();
     _num_retrievals++;
     if (_num_retrievals > _max_retrievals) {
 	repermute ();
@@ -340,15 +280,18 @@ public:
 		     const boost::array<ByteBuffer,2>& objs,
 		     boost::array<ByteBuffer,2>& o_objs)
 	{
-	    index_t T_i = bb2basic<index_t> (objs[IDX]);
-	    const ByteBuffer & item = objs[ITEM];
+	    index_t 		T_i  = bb2basic<index_t> (objs[IDX]);
+	    const ByteBuffer & 	item =			  objs[ITEM];
 
-	    //	o_objs[IDX] is not written out
+	    // do this in case the output goes to a different container
+	    o_objs[IDX] = objs[IDX];
 	    
 	    if (T_i == _target_idx) {
-		assert (_the_item.len() == 0); // we should see 'idx' only once
+		assert (((void)"dummy_fetches_stream_prog should not "
+			 "see its target index more than once",
+			 _the_item.len() == 0));
 
-		_the_item = ByteBuffer (item, ByteBuffer::DEEPCOPY);
+		_the_item = ByteBuffer (item, ByteBuffer::deepcopy());
 
 		if (_new_val) {
 		    // all sizes need to be the same! caller should ensure this
@@ -358,14 +301,15 @@ public:
 		    // FIXME: ignoring the offset (new_val->first) for now
 		    o_objs[ITEM] = towrite;
 		}
+		else {
+		    // pass through
+		    o_objs[ITEM] = objs[ITEM];
+		}
 	    }
 
 	    else {
-		// TIMING:
-		if (_new_val) {
-		    // will be written out re-encrypted with a new IV
-		    o_objs[ITEM] = item;
-		}
+		// pass through, but will be written out re-encrypted with a new IV
+		o_objs[ITEM] = objs[ITEM];
 	    }
 	    
 	}
@@ -400,8 +344,8 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
 				    optional < pair<size_t, ByteBuffer> > new_val)
     throw (better_exception)
 {
-    boost::array<FlatIO*,2> in_ios = { &_workarea.idxs, &_workarea.items };
-    boost::array<FlatIO*,2> out_ios = { &_workarea.idxs, NULL };
+    boost::array<FlatIO*,2> in_ios =  { &_workarea.idxs, &_workarea.items };
+    boost::array<FlatIO*,2> out_ios = { &_workarea.idxs, new_val ? &_workarea.items : NULL };
     
     dummy_fetches_stream_prog prog (idx, new_val, this);
 
@@ -450,12 +394,14 @@ void Array::repermute ()
     // its IOFilterEncrypt will setup the new keys
     shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_io.getName() + "-p2",
 					       std::make_pair (N, _elem_size)));
+#ifndef NO_ENCRYPT
     p2_cont_io->appendFilter (
 	auto_ptr<HostIOFilter> (
 	    new IOFilterEncrypt (
 		p2_cont_io.get(),
 		shared_ptr<SymWrapper> (new SymWrapper (_prov_fact)))));
-    
+#endif
+
     // copy values across
     stream_process ( identity_itemproc,
 		     zero_to_n (N),
@@ -480,7 +426,82 @@ void Array::repermute ()
 }
 
 
-/// add a new distinct element to T (#_touched_io):  either idx or a random
+struct rand_idx_and_have_idx
+{
+    rand_idx_and_have_idx (index_t target_index,
+			   index_t rand_idx_initval)
+	: target_index	(target_index),
+	  rand_idx	(rand_idx_initval),
+	  have_target	(false),
+	  have_rand	(false)
+	{}
+    
+    void operator() (index_t, const ByteBuffer& in, ByteBuffer&)
+	{
+	    index_t T_i = bb2basic<index_t> (in);
+
+	    if (T_i == target_index)
+	    {
+		have_target = true;
+	    }
+	    if (T_i == rand_idx)
+	    {
+		have_rand = true;
+	    }
+	}
+
+    const index_t target_index;
+    const index_t rand_idx;
+    bool have_target;
+    bool have_rand;		// is the proposed rand_idx in the working set
+				// already?
+};
+
+
+struct insert_new_touched
+{
+    // this one works on batches of two, one from T.idxs and one from T.items
+
+    enum {
+	IDX = 0,
+	ITEM = 1
+    };
+    
+    insert_new_touched (index_t new_idx, const ByteBuffer& new_item)
+	{
+	    inhand.idx	= new_idx;
+	    inhand.item = new_item;
+	}
+
+    void operator() (const boost::array<index_t,2>& idxs,
+		     const boost::array<ByteBuffer,2>& objs,
+		     boost::array<ByteBuffer,2>& o_objs)
+	{
+	    index_t T_i = bb2basic<index_t> (objs[IDX]);
+
+	    assert (((void)"insert_new_touched() should see each T_i only once",
+		     T_i != inhand.idx));
+	    
+	    o_objs[ITEM] = objs[ITEM];
+
+	    // return the smaller-numbered item, keep the bigger one
+	    if (T_i > inhand.idx) {
+		std::swap (inhand.idx, T_i);
+		std::swap (inhand.item, o_objs[ITEM]);
+	    }
+
+	    o_objs[IDX] = basic2bb (T_i);
+	}
+
+    struct {
+	index_t idx;
+	ByteBuffer item;
+    } inhand;
+
+};
+
+
+/// add a new distinct element to T (#_workarea.idxs):  either idx or a random
 /// index (not already in T).
 ///
 /// working with physical indices here
@@ -488,60 +509,50 @@ void Array::append_new_working_item (index_t idx)
     throw (better_exception)
 {
 
-    // NOTATION: T is the set of touched indices (stored in _touched_io in
-    // sorted order)
-    
-    // at the end we want:
-    // if idx is not in T, it is inserted in the correct place
-    // if idx is in T, a random index R \notin T is inserted in the correct
-    //    place
-    //
-    // big question: can we do it in one pass? seems bad, as idx could be large,
-    // and R small, so we would not know if idx is in T at the time when R
-    // can be inserted.
-    //
-    // So, two passes: one to see what we need to do, and one to insert the
-    // needed element in?
-    // 
-    // TODO: can comnbine pass two with the actual object fetches.
+    bool have_target;
+    bool good_rand = false;
+    index_t rand_idx;
+    // need to find a random untouched index regardless of whether we need it
+    // (ie. target_idx is already touched)
+    while (!good_rand)
+    {
+	rand_idx = _rand_prov->randint (N);
+	LOG (Log::PROGRESS, logger,
+	     "While accessing physical idx " << idx << ", trying rand_idx " << rand_idx);
+	rand_idx_and_have_idx prog (idx, rand_idx);
+	stream_process (prog,
+			zero_to_n (_num_retrievals),
+			&_workarea.idxs,
+			NULL);
 
-
-    // so, pass one, see if idx is in T, and generate R
-
-    // starting value for the random untouched index
-    // we'll increment it by the number of elts in T which are smaller than
-    // it.
-    index_t rand_idx = _rand_prov->randint (N - _num_retrievals);
-
-    index_t T_i;
-    bool have_idx = false;
-    for (index_t i = 0; i < _num_retrievals; i++) {
-	
-	T_i = hostio_read_int (_workarea.idxs, i);
-
-	// adjust the rand_idx one higher if this touched index is less than
-	// it
-	if (T_i <= rand_idx) {
-	    rand_idx++;
-	}
-
-	if (T_i == idx) {
-	    have_idx = true;
-	}
+	good_rand   = !prog.have_rand;
+	have_target = prog.have_target;
     }
 
-    // now, the correct rand_idx is ready, and have_idx is known
-    
-    index_t to_append = have_idx ? rand_idx : idx;
+    index_t to_append = have_target ? rand_idx : idx;
 
-    // grab the object at to_append and append it and to_append to _workarea
-
+    // grab the object at to_append, and insert it and its index into _workarea
     ByteBuffer obj;
     _array_io.read (to_append, obj);
+    {
+	insert_new_touched prog (to_append, obj);
 
-    hostio_write_int (_workarea.idxs, _num_retrievals, to_append);
-    _workarea.items.write (_num_retrievals, obj);
+	boost::array<FlatIO*,2> in_ios =  { &_workarea.idxs, &_workarea.items };
+	boost::array<FlatIO*,2> out_ios = { &_workarea.idxs, &_workarea.items };
+	
+	stream_process (prog,
+			zero_to_n<2> (_num_retrievals),
+			in_ios,
+			out_ios,
+			boost::mpl::size_t<1>(), // batch size
+			boost::mpl::size_t<2>()	// number of I/O channels
+			);
 
+	// and write in the largest-indexed item at the end of work area.
+	_workarea.idxs.write (_num_retrievals, basic2bb (prog.inhand.idx));
+	_workarea.items.write (_num_retrievals, prog.inhand.item);
+    }
+	
     // maintain invariant on the _workarea and _num_retrievals
     _num_retrievals++;
 }

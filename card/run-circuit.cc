@@ -178,7 +178,7 @@ void CircuitEval::read_gate (gate_t & o_gate,
 {
     ByteBuffer gate_bytes;
     
-    _cct_io.read (gate_num, gate_bytes);
+    _cct_io.read (static_cast<index_t>(gate_num), gate_bytes);
 
     LOG (Log::DUMP, logger,
 	 "Unwrapped gate to " << gate_bytes.len() << " bytes");
@@ -388,7 +388,7 @@ void CircuitEval::do_gate (const gate_t& g)
 
 void CircuitEval::put_gate_val (int gate_num, const ByteBuffer& val)
 {
-    _vals_io.write (gate_num, val);
+    _vals_io.write (static_cast<index_t>(gate_num), val);
 }
 
 
@@ -396,7 +396,7 @@ ByteBuffer CircuitEval::get_gate_val (int gate_num)
 {
     ByteBuffer buf;
     
-    _vals_io.read (gate_num, buf);
+    _vals_io.read (static_cast<index_t>(gate_num), buf);
 
     LOG (Log::DUMP, logger, "get_gate_val for gate " << gate_num
 	  << ": len=" << buf.len());

@@ -21,7 +21,7 @@
 
 
 namespace BatcherNetwork {
-    static Log::logger_t logger;
+    extern Log::logger_t logger;
 
     DECL_STATIC_INIT(logger = Log::makeLogger ("batcher-network",
 					       boost::none, boost::none));

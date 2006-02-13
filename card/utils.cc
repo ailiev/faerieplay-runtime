@@ -6,31 +6,6 @@
 #include "utils.h"
 
 
-void prefetch_contiguous_from (FlatIO & io,
-			       index_t start,
-			       size_t howmany)
-    throw (better_exception)
-{
-    FlatIO::idx_list_t l (howmany);
-    std::generate (l.begin(), l.end(), counter(start));
-    io.prefetch (l);
-}
-
-void standard_prefetch (FlatIO & io,
-			index_t i,
-			size_t batch_size,
-			size_t total)
-    throw (better_exception)
-{
-    if (i % batch_size == 0) {
-	prefetch_contiguous_from (
-	    io,
-	    i,
-	    std::min (batch_size, total - i));
-    }
-}
-
-
 
 
 int bb2int (const ByteBuffer& bb)
@@ -53,6 +28,7 @@ int hostio_read_int (FlatIO & io, index_t idx)
     return bb2int (buf);
 }
 
+#if 0
 void hostio_read_ints (FlatIO & io,
     const FlatIO::idx_list_t & idxs,
     std::vector<int> & o_ints)
@@ -64,6 +40,20 @@ void hostio_read_ints (FlatIO & io,
 	       o_ints.begin(),
 	       bb2int);
 }
+
+void hostio_write_ints (FlatIO & io,
+			const FlatIO::idx_list_t & idxs,
+			const std::vector<int> & ints)
+    throw (better_exception)
+{
+    obj_list_t objs (ints.size());
+    transform (ints.begin(), ints.end(),
+	       objs.begin(),
+	       int2bb);
+	       
+    io.write (idxs, objs);
+}
+#endif // 0
 
 
 ByteBuffer int2bb (int i)
@@ -83,17 +73,4 @@ void hostio_write_int (FlatIO & io, index_t idx,
     io.write (idx, buf);
 }
 
-
-void hostio_write_ints (FlatIO & io,
-			const FlatIO::idx_list_t & idxs,
-			const std::vector<int> & ints)
-    throw (better_exception)
-{
-    obj_list_t objs (ints.size());
-    transform (ints.begin(), ints.end(),
-	       objs.begin(),
-	       int2bb);
-	       
-    io.write (idxs, objs);
-}
 

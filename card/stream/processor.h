@@ -2,7 +2,6 @@
 
 #include <boost/range.hpp>
 #include <boost/array.hpp>
-#include <boost/lambda/core.hpp> // for _1 etc
 #include <boost/lambda/lambda.hpp>
 
 #include <boost/mpl/size_t.hpp>
@@ -198,31 +197,10 @@ struct stream_processor {
 };
 
 
-// specialize for case where N=1, dropping all the array and just using straight
-// scalar.
-// template <class ItemProc,
-// 	  class StreamOrder>
-// struct stream_processor<ItemProc,StreamOrder,1>
-// {
-//     static void process (
-// 	ItemProc & itemproc,
-// 	const StreamOrder & order,
-// 	FlatIO * in,
-// 	FlatIO * out)
-// 	{
-// 	    stream_processor<ItemProc, StreamOrder,  1,  size_t,ByteBuffer>
-// 		::process (itemproc, order, in, out);
-// 	}
-// };
+//
+// function front-ends
+//
 
-
-
-
-// so, can have a range-transform function, which takes the specialized order
-// range for this particular invocation, and transforms it into the general
-// pair<index_t> that stream_processor wants.
-
-// versions of the processor function which has input and output indices identical.
 template <class ItemProc,
 	  class StreamOrder,
 	  class IO,
@@ -263,7 +241,7 @@ void stream_process (const ItemProc & itemproc,
 }
 
 
-/** overloaded versions for case where B=1 and I=1
+/** overloaded versions for case where B=1 and I=1, for const and non-const proc
 */
 
 template <class ItemProc,

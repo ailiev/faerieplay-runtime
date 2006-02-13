@@ -9,6 +9,10 @@
 #include <pir/common/utils.h>
 
 
+#ifndef _STREAM_HELPERS_H
+#define _STREAM_HELPERS_H
+
+
 /// identity item procedure for #stream_process, on batches of size 1 (without
 /// using boost::array)
 inline void identity_itemproc (size_t i, const ByteBuffer& in,
@@ -48,6 +52,33 @@ private:
     IntProc f;
 };
 
+
+#if 0
+// adapt an itemproc working on some streamable C++ type to a standard one
+template <class Proc>
+struct streamtype_itemproc
+{
+    typedef typedef Proc::second_argument_type T;
+
+    streamtype_itemproc (const Proc& f)
+	: f(f)
+	{}
+
+    void operator() (size_t i, const ByteBuffer& in,
+		     ByteBuffer & out)
+	{
+	    T x, y;
+
+	    std::string str;
+	    std::istringstream str
+	    
+	    y = f(i, x
+
+		  }
+	}
+
+};
+#endif // 0
 
 
 template <class BasicProc>
@@ -210,6 +241,7 @@ make_array_range (const Range& r,
 
 /// make a stream processing order range, with identical input and output
 /// indices, and counting from 0 to N
+inline
 pair_range<pir::counting_range<index_t> >
 zero_to_n (index_t N)
 {
@@ -235,3 +267,6 @@ zero_to_n (index_t N)
 //     out = in;
 // }
 
+
+
+#endif // _STREAM_HELPERS_H

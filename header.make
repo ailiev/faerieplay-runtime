@@ -5,10 +5,11 @@
 # deeper.
 
 
-PIR=../../pir
+ROOTDIR=$(HOME)/work/code/sfdl-runtime
+
+PIR=$(ROOTDIR)/../pir
 PIRCARD=$(PIR)/card
 PIRHOST=$(PIR)/host
 
 # the code/ directory
-CPPFLAGS += -I../../ -I$(PIR)
-
+CPPFLAGS += -I$(ROOTDIR)/.. -I$(PIR)

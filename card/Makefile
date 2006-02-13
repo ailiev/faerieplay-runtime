@@ -9,9 +9,6 @@ include $(PIR)/common.make
 
 CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
 
-# for use by stream/processor.h
-# CPPFLAGS += -I../../..
-
 # CPPFLAGS += -DNDEBUG
 
 CFLAGS += #-O -march=i486
@@ -20,6 +17,10 @@ DESTDIR=$(LEEDS_BIN)
 
 LIBSRCS=array.cc utils.cc batcher-permute.cc batcher-network.cc 
 SRCS=run-circuit.cc enc-circuit.cc $(LIBSRCS)
+
+TESTSRCS=$(wildcard test-*.cc)
+
+$(TESTEXES): $(LIBOBJS)
 
 
 # LDFLAGS+=-static
@@ -36,9 +37,11 @@ CPPFLAGS    += -DHAVE_OPENSSL
 endif
 
 
-TARGETS=array permute runtime enc-circuit
+TARGETS=runtime enc-circuit
 
 all: build
+
+
 
 build: $(TARGETS)
 
@@ -69,20 +72,11 @@ enc-circuit.o : CPPFLAGS += $(CCT_FLAGS)
 enc-circuit: enc-circuit.o $(LDLIBFILES) #$(CCT_DEPS)
 	$(CXXLINK)
 
-batcher-permute-main.o : CPPFLAGS += -D_TESTING_BATCHER_PERMUTE
-batcher-permute-main.o: batcher-permute.cc
-	$(CXXCOMP)
-permute: $(patsubst batcher-permute.o,batcher-permute-main.o,$(CCT_DEPS))
-	$(CXXLINK)
 
-# generate a different object file with a main in it
-array-main.o : CPPFLAGS += -DTESTING_ARRAY
-array-main.o: array.cc
-	$(CXXCOMP)
-array: $(patsubst array.o,array-main.o,$(CCT_DEPS))
-	$(CXXLINK)
+tests: $(TESTEXES)
+
 
 # give the dependency generation step all the include dirs
-depend : CPPFLAGS += $(CCT_FLAGS)
+dep : CPPFLAGS += $(CCT_FLAGS)
 
-include ../footer.make
+include $(PIR)/footer.make
