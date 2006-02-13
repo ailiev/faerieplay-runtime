@@ -45,6 +45,12 @@ using boost::none;
 // #define NO_REFETCHES
 // #define NO_ENCRYPT
 
+// how to examine the working area indices files on the host:
+// for f in *; do echo $f; od -t d4 -A n $f; done
+// and the working area objects:
+// for f in *; do echo $f; od -s -A n $f; done
+// of course NO_ENCRYPT should be enabled for this to be useful.
+
 namespace {
     Log::logger_t logger = Log::makeLogger ("array",
 					    boost::none, boost::none);    
