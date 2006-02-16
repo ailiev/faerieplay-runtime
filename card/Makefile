@@ -7,11 +7,24 @@ include ../header.make
 include $(PIR)/common.make
 
 
-CPPFLAGS += -I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
+
+SUBDIRS:=stream
+
+
+
+ifdef HAVE_4758_CRYPTO
+	CPPFLAGS += -I$(4758_KERNEL_INCLUDE)
+endif
+ifdef COMM_SCC
+	CPPFLAGS += -I$(SCC_INCLUDE)
+endif
+
 
 # CPPFLAGS += -DNDEBUG
 
-CFLAGS += #-O -march=i486
+ifdef RUNONCARD
+	CFLAGS += -march=i486
+endif
 
 DESTDIR=$(LEEDS_BIN)
 
@@ -19,8 +32,6 @@ LIBSRCS=array.cc utils.cc batcher-permute.cc batcher-network.cc
 SRCS=run-circuit.cc enc-circuit.cc $(LIBSRCS)
 
 TESTSRCS=$(wildcard test-*.cc)
-
-$(TESTEXES): $(LIBOBJS)
 
 
 # LDFLAGS+=-static
@@ -39,13 +50,13 @@ endif
 
 TARGETS=runtime enc-circuit
 
-all: build
+all: subdirs build
 
 
 
 build: $(TARGETS)
 
-install: build
+install: subdirs build
 #	strip $(TARGETS)
 	$(INSTALL) $(TARGETS) $(DESTDIR)
 
@@ -54,14 +65,14 @@ LIBOBJS=$(LIBSRCS:.cc=.o)
 
 # external libraries. they get added into LDLIBS in common.make
 LIBDIRS		+= $(LEEDS_LIB) ../common
-LDLIBFILES	+= -lcard -lsfdl-common -lcommon
+LDLIBFILES	+= -lcard -lsfdl-common -lcommon -lcard-stream
 
 
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
 
 # the commands and all for run-circuit and enc-circuit are identical!
-CCT_FLAGS=-I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
+#CCT_FLAGS=-I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
 CCT_DEPS=$(LIBOBJS) $(LDLIBFILES)
 
 run-circuit.o : CPPFLAGS += $(CCT_FLAGS)
@@ -73,10 +84,20 @@ enc-circuit: enc-circuit.o $(LDLIBFILES) #$(CCT_DEPS)
 	$(CXXLINK)
 
 
+$(TESTEXES): $(LIBOBJS)
+
 tests: $(TESTEXES)
+
+
+
+subdirs: $(SUBDIRS)
+$(SUBDIRS):
+	$(MAKE) -C $@ $(MAKECMDGOALS)
+
+.PHONY: subdirs $(SUBDIRS)
 
 
 # give the dependency generation step all the include dirs
 dep : CPPFLAGS += $(CCT_FLAGS)
 
-include $(PIR)/footer.make
+include ../footer.make

@@ -170,24 +170,6 @@ make_aggregate_proc_adapter (const ItemProc& proc)
 
 
 
-// function object to convert a scalar to an array of N items with that scalar
-// in each index.
-template <class T, size_t N>
-struct scalar2array : public std::unary_function<T, boost::array<T,N> >
-{
-    boost::array<T,N> operator () (const T& t) const
-	{
-	    boost::array<T,N> answer;
-	    for (unsigned i=0; i < N; i++)
-	    {
-		answer[i] = t;
-	    }
-	    return answer;
-	}
-};
-
-
-
 
 template <class Range>
 #define PARENTTYPE \

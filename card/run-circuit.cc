@@ -19,7 +19,7 @@
 #include <pir/card/io_flat.h>
 #include <pir/card/io_filter.h>
 #include <pir/card/io_filter_encrypt.h>
-#include <pir/card/4758_sym_crypto.h>
+
 
 #include <pir/card/configs.h>
 
@@ -92,14 +92,14 @@ int main (int argc, char *argv[]) {
 
 	CircuitEval evaluator (g_configs.cct_name, g_provfact.get());
 
-	LOG (Log::PROGRESS, CircuitEval::logger, "run-circuit starting circuit evaluation at "
-	     << epoch_time);
-
+	clog << "run-circuit starting circuit evaluation at "
+	     << epoch_time <<  endl;
+	
 	evaluator.eval ();
+	
+	clog << "run-circuit done with circuit evaluation at "
+	     << epoch_time << endl;
 
-	LOG (Log::PROGRESS, CircuitEval::logger,
-	     "run-circuit done with circuit evaluation at "
-	     << epoch_time);
 //     }
 //     catch (const std::exception & ex) {
 // 	cerr << "Exception: " << ex.what() << endl;

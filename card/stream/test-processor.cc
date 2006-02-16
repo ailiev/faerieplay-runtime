@@ -16,6 +16,16 @@ void shortening_itemproc (index_t i,
     out.len() -= 1;
 }
 
+void shortening_2_itemproc (const boost::array<index_t,2>& idxs,
+			    const boost::array<ByteBuffer,2>& in,
+			    boost::array<ByteBuffer,2>& out)
+{
+    out[0] = in[0];
+    out[1] = in[1];
+    out[0].len() -= 3;
+    out[1].len() -= 3;
+}
+
 
 int main (int argc, char *argv[])
 {
@@ -23,19 +33,20 @@ int main (int argc, char *argv[])
     using namespace boost;
     
     const size_t N = 64;
+    const size_t elem_size = 16;
     
-    vector<string> to_write (N);
+    vector<ByteBuffer> to_write (N);
     vector<index_t> idxs(N);
-    vector<string> to_read (N);
+    vector<ByteBuffer> to_read (N);
 
     FlatIO cont1 ("stream-tester-1",
-		  Just (make_pair(N, 16U)));
+		  Just (make_pair(N, elem_size)));
 
     FlatIO cont2 ("stream-tester-2",
-		  Just (make_pair(N, 16U)));
+		  Just (make_pair(N, elem_size)));
 
     FlatIO cont3 ("stream-tester-3",
-		  Just (make_pair(N, 16U)));
+		  Just (make_pair(N, elem_size)));
 
 
     std::generate (idxs.begin(), idxs.end(),
@@ -44,7 +55,12 @@ int main (int argc, char *argv[])
     // fill string in with  strings corresponding to a sequence of ints starting
     // from 12345678
     std::generate ( to_write.begin(), to_write.end(),
-		    bind (itoa, bind (counter (12345678))) );
+		    bind (string2bb, bind (itoa, bind (counter (12345678)))) );
+
+    cout << "initial value of to_write" << endl;
+    
+    copy (to_write.begin(), to_write.end(),
+	  ostream_iterator<ByteBuffer>(cout, "\n"));
 
     cont1.write (idxs, to_write);
 
@@ -53,8 +69,22 @@ int main (int argc, char *argv[])
 		    &cont1,
 		    &cont2);
 
-    stream_process (shortening_itemproc,
-		    zero_to_n (N),
-		    &cont1,
-		    &cont3);
+    array<FlatIO*, 2> ins = { &cont1, &cont2 };
+    stream_process (shortening_2_itemproc,
+		    zero_to_n<2> (N),
+		    ins,
+		    ins,
+		    boost::mpl::size_t<1>(),
+		    boost::mpl::size_t<2>());
+
+//     stream_process (shortening_itemproc,
+// 		    zero_to_n (N),
+// 		    &cont1,
+// 		    &cont3);
+
+    cont2.read (idxs, to_read);
+
+    cout << "After applyitng shortening_2_itemproc: " <<  endl;
+    copy (to_read.begin(), to_read.end(),
+	  ostream_iterator<ByteBuffer>(cout, "\n"));
 }

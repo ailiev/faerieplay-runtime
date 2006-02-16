@@ -1,0 +1,23 @@
+2006-02-16  Alex Iliev  <sasho@zele.kiewit.dartmouth.edu>
+
+	* processor.cc: for now, just has an instance of static
+	initializer for a logger object.
+
+	* processor.h: Added caching/batching of I/O operations. The
+	number of operations to catch determined by the object sizes
+	involved, so the cache size is fixed.
+
+2006-02-07  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
+
+	* processor.h: Restored the use of the boost::range library, after
+	figuring out that the iterator type of a range must be gotten by
+	boost::range_iterator<Range>::type, and not just Range::type
+
+	* helpers.h: Little useful functions/classes.
+
+	* processor.h: The general stream processor, which takes an
+	ordering, a "program", and IO channels, and streams the dataset
+	through the program.
+
+	
+

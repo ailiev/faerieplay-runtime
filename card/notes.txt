@@ -1,0 +1,24 @@
+<date>Jan 31 18:10:29 2006 </date>
+
+Making IVs fixed, and not randomly generated, made negligible
+difference to running time, from 60 to 59 secs on 64-element array
+(twice) traversal. Adding optimization (-O2) took it down to 49 secs.
+
+<date>Wed Feb 13 18:07:32 2006</date>
+
+With all the stream processor stuff (ie. all the small template
+functions) the array-v0 test on 64 elements runs in 119 secs, without
+compile optimizations. With -O2 it's down to 95. No batching of IO's
+yet though, which could be the big factor here.
+
+
+<date>Wed Feb 15 18:08:05 2006</date>
+
+Added I/O caching in the stream processor! The array-v0 circuit
+compiled with -O2 run took 51 secs
+
+
+<date>Thu Feb 16 14:08:26 2006</date>
+
+With rather large batching - 512 or 1024 ops at a time, which means
+just one I/O per stream for the most, time is down to 48 seconds.
