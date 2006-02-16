@@ -15,7 +15,7 @@ DESTDIR=$(LEEDS_BIN)
 LIBDIRS = $(PIR)/common ../common
 LDLIBFILES=-lsfdl-common -lcommon -lboost_filesystem
 vpath %.so $(LIBDIRS)
-
+vpath %.a $(LIBDIRS)
 
 TARGETS=prep-circuit
 
