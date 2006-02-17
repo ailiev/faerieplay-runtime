@@ -32,30 +32,13 @@ public:
 	{};
     
 
-    /// a descriptor type for the static Array table
-    typedef int des_t;
-
-    /// create a new array, and add it to the internal array map.
-    /// @param len number of elements
-    /// @param elem_size the maximum size of each element
-    /// @return an array descriptor which can be given to getArray() to retrieve
-    /// this array.
-    static des_t newArray (const std::string& name,
-			 size_t len, size_t elem_size,
-			 CryptoProviderFactory * crypt_fact)
-	throw (better_exception);
-
-    /// get a reference to an array
-    /// @param num the array descriptor, from newArray()
-    static Array & getArray (des_t num);
-
-
 
     /// Write a value to an array index.
     /// @param idx the target index
     /// @param off the offset in bytes within that index, where we place the new
     /// value
     void write (index_t idx, size_t off,
+		index_t branch,
                 const ByteBuffer& val)
         throw (better_exception);
 
@@ -63,22 +46,120 @@ public:
     /// Encapsulates all the re-fetching and permuting, etc.
     /// @param idx the index
     /// @return new ByteBuffer with the value
-    ByteBuffer read (index_t i)
+    ByteBuffer read (index_t i,
+		     index_t branch)
 	throw (better_exception);
 
+    // make a new branch and return its index
+    index_t newBranch (index_t source_branch);
+    
     /// Write a value non-hidden, probably during initialization
-    void write_clear (index_t i, const ByteBuffer& val)
-	throw (host_exception, comm_exception);
+//     void write_clear (index_t i, const ByteBuffer& val)
+// 	throw (host_exception, comm_exception);
     
 
-    class dummy_fetches_stream_prog;
-    friend class dummy_fetches_stream_prog;
     
 private:
 
     /// re-permute the objects under a new random permutation
     void repermute ();
 
+
+    class ArrayT
+    {
+    public:
+	// used when creating the first T for an unbranched array.
+	ArrayT (const std::string& name, /// the array name
+		size_t max_retrievals,
+		size_t elem_size);
+
+	/// @return the index to fetch into T. none if rand_idx is already in
+	/// this T.
+	boost::optional<index_t>
+	find_fetch_idx (index_t rand_idx, index_t target_idx);
+
+	/// Read (and maybe write) all the elements in this T, returning the
+	/// current value of target_index
+	/// PRE: the target_index must be in this T
+	ByteBuffer do_dummy_accesses (index_t target_index,
+				      < std::pair<size_t, ByteBuffer> > new_val);
+
+	void appendItem (index_t idx, const ByteBuffer& item);
+
+	// called when a new branch is to be created.
+	// new_branch is just provided to enable useful naming of the container.
+	ArrayT duplicate (index_t new_branch);
+
+	class dummy_fetches_stream_prog;
+	friend class dummy_fetches_stream_prog;
+	
+    private:
+
+	// used by duplicate()
+	ArrayT (const std::string& name, /// the array name
+		unsigned branch_num, // this will be the b-th branch
+		size_t elem_size);
+
+
+	
+	std::string _cont_name;
+	index_t _branch;	// our branch number
+
+	FlatIO _idxs, _items;
+
+	/// how many retrievals already done this session?
+	/// this should be the same as the owner Array's _num_retrievals, but
+	/// would be tedious to pass it to every method here.
+	size_t              _num_retrievals;
+    };
+
+    
+
+    class ArrayA
+    {
+    public:
+	
+	ArrayA (const std::string& name, /// the array name
+		size_t elem_size);
+
+	void
+	repermute (const boost::shared_ptr<TwoWayPermutation>& old_p,
+		   const boost::shared_ptr<TwoWayPermutation>& new_p);
+
+	ArrayA duplicate(index_t branch);
+
+	friend class Array;
+	
+    private:
+	// used by duplicate()
+	ArrayT (const std::string& name, /// the array name
+		unsigned branch_num, // this is the b-th branch (for naming
+				     // purposes)
+		size_t elem_size);
+
+	FlatIO _io;
+    };
+
+
+    // the selection routines
+    static ArrayT
+    select (const ArrayT& a, const ArrayT& b, bool which);
+
+    static ArrayA
+    select (const ArrayA& a, const ArrayA& b, bool which);
+
+    /// merge a T into an A
+    static void
+    merge (const ArrayT& t, ArrayA& a);
+	
+	
+    // get tha A for this branch
+    shared_ptr<ArrayA> & getA (index_t branch);
+    
+    bool have_mult_As();
+
+    void repermute_As();
+    
     /// retrieve or update an object, while doing all the necesary re-fetches.
     /// @param idx the virtual index to read/write
     /// @param new_val pointer to an offset and data value, to be written to
@@ -99,61 +180,46 @@ private:
 	throw (better_exception);
     
 
-    typedef std::map< int, boost::shared_ptr<Array> > map_t;
-    static map_t _arrays;
-    static int _next_array_num;
+    //
+    // variables
+    //
     
-    std::string _name		// this array's name
-	, _array_cont		// and the container name
-	// container of the touched elements. will be kept sorted, and new
-	// arrivals inserted into it.
-	, _touched_cont;
+    std::vector<boost::shared_ptr<ArrayT> > _Ts;
+    // most of the time we'll have just one A, so to simplify:
+//     boost::variant <boost::shared_ptr<ArrayA>,
+// 		    std::vector<boost::shared_ptr<ArrayA> > > _As;
+    // actually much simpler for me like this!
+    std::vector<boost::shared_ptr<ArrayA> > _As;
+    
+    size_t _num_branches;
+
+    std::string _name;		// this array's name
+
     
     size_t N
 	,  _elem_size;
 
-    size_t		_max_retrievals;
-    
     // need to hand a factory to permutation objects many times, so hang onto
     // one
     CryptoProviderFactory * _prov_fact;
 
 
-    /// The encrypted and permuted items
-    FlatIO _array_io;
-
-    struct WorkArea {
-	FlatIO idxs, items;
-    };
-    
-    /// A sorted list of encrypted physical indices along with the actual items,
-    /// which have been touched in previous retrievals.
-    ///
-    /// \invariant len (#_touched_io) = #_num_retrievals
-    WorkArea _workarea;
-
-    /// how many retrievals already done this session?
-    size_t              _num_retrievals;
-
     std::auto_ptr<RandProvider> _rand_prov;
 
-/* TODO: do this next...
-    // how many branches deep is this array now?
-    int 	_depth;         // _depth = _divergences.size()
-
-    // this is more like a stack
-    list<divergence_point> _divergences;
-*/
-    
     // PIRW algorithm parameters
 
     std::auto_ptr<TwoWayPermutation>   _p;
+
+    static Log::logger_t _logger;
+
+    DECL_STATIC_INIT( Array::_logger = Log::makeLogger ("array",
+							none, none); );
     
-    /// batchsize for index's
-    size_t _idx_batchsize;
-    /// batchsize for objects
-    size_t _obj_batchsize;
 };
+
+
+DECL_STATIC_INIT_INSTANCE (Array);
+
 
 #if 0
 /// The object to be used by users for array operations.
@@ -163,12 +229,30 @@ class ArrayHandle {
 
 public:
 
-    ArrayHandle (boost::shared_ptr<Array> arr,
-		 index_t t_index)
-	: _arr (arr),
-	  _T_index (t_index)
-	{}
+    /// a descriptor type for the static Array table
+    typedef int des_t;
 
+    /// create a new array, and add it to the internal array map.
+    /// @param len number of elements
+    /// @param elem_size the maximum size of each element
+    /// @return an array descriptor which can be given to getArray() to retrieve
+    /// this array.
+    static des_t newArray (const std::string& name,
+			 size_t len, size_t elem_size,
+			 CryptoProviderFactory * crypt_fact)
+	throw (better_exception);
+
+    /// get a reference to an array
+    /// @param num the array descriptor, from newArray()
+    static ArrayHandle & getArray (des_t num);
+
+
+    // do a select operation, and return the handle of the result.
+    static des_t select (const ArrayHandle& a,
+			 const ArrayHandle& b,
+			 bool which);
+
+    
     // the three methods just proxy on to the Array object
 
     /// Write a value to an array index.
@@ -199,16 +283,29 @@ public:
 	{
 	    _arr->write_clear (_T_index, i, val);
 	}
-    
+
 private:
-    // the array
+
+    // used in newArray
+    ArrayHandle (boost::shared_ptr<Array> arr,
+		 index_t t_index)
+	: _arr (arr),
+	  _T_index (t_index)
+	{}
+
     boost::shared_ptr<Array> _arr;
-    // which is this array fork's T?
-    index_t _T_index;
+    
+    index_t _branch_index;
 
     unsigned _last_depth;
+
+    // the array map
+    typedef std::map< int, boost::shared_ptr<ArrayHandle> > map_t;
+    static map_t _arrays;
+    static int _next_array_num;
+
 };
-#endif
+#endif // 0
 
 
 

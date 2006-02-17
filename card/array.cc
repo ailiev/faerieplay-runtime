@@ -64,11 +64,17 @@ namespace {
     Array::map_t Array::_arrays;
     Array::des_t Array::_next_array_num = 1;
 
-
     const string ARRAY_NAME = "-array",
 	IDXS_NAME = "-working-idxs",
 	OBJS_NAME = "-working-objs";
 }
+
+
+// the static logger
+Log::logger_t Array::_logger;
+
+INSTANTIATE_STATIC_INIT(Array);
+
 
 // Containers used:
 // 
@@ -200,7 +206,7 @@ void Array::write_clear (index_t idx, const ByteBuffer& val)
 
 
 
-ByteBuffer Array::read (index_t idx)
+ByteBuffer Array::read (index_t idx, index_t branch)
     throw (better_exception)
 {
     // need to:
@@ -223,16 +229,18 @@ ByteBuffer Array::read (index_t idx)
     return obj;
 #endif
     
-    append_new_working_item (p_idx);
+    append_new_working_item (p_idx, branch);
 
-    ByteBuffer buf = do_dummy_fetches (p_idx, boost::none);
-
+    ByteBuffer buf = _Ts[branch]->do_dummy_accesses (p_idx,
+						     boost::none);
+    
     if (_num_retrievals > _max_retrievals) {
 	repermute ();
     }
 
     return buf;
 }
+
 
 void Array::write (index_t idx, size_t off,
 		   const ByteBuffer& val)
@@ -265,7 +273,6 @@ void Array::write (index_t idx, size_t off,
 class Array::dummy_fetches_stream_prog
 {
 
-    
     // named indexers into the above arrays
     enum {
 	IDX=0,			// the item index
@@ -276,10 +283,10 @@ public:
 
     dummy_fetches_stream_prog (index_t target_idx,
 			       const optional <pair<size_t, ByteBuffer> > & new_val,
-			       Array * owner)
+			       elem_size)
 	: _target_idx (target_idx),
 	  _new_val (new_val),
-	  _owner (owner)
+	  _elem_size (elem_size)
 	{}
     
     void operator() (const boost::array<index_t,2>& idxs,
@@ -301,7 +308,7 @@ public:
 
 		if (_new_val) {
 		    // all sizes need to be the same! caller should ensure this
-		    assert (_new_val->second.len() == _owner->_elem_size);
+		    assert (_new_val->second.len() == _elem_size);
 		
 		    ByteBuffer towrite = _new_val->second;
 		    // FIXME: ignoring the offset (new_val->first) for now
@@ -333,7 +340,7 @@ private:
     index_t _target_idx;
     const optional <pair<size_t, ByteBuffer> > & _new_val;
 
-    Array * _owner;
+    size_t _elem_size;
 
     ByteBuffer _the_item;
 };
@@ -350,8 +357,8 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
 				    optional < pair<size_t, ByteBuffer> > new_val)
     throw (better_exception)
 {
-    boost::array<FlatIO*,2> in_ios =  { &_workarea.idxs, &_workarea.items };
-    boost::array<FlatIO*,2> out_ios = { &_workarea.idxs, new_val ? &_workarea.items : NULL };
+    boost::array<FlatIO*,2> in_ios =  { &_idxs, &_items };
+    boost::array<FlatIO*,2> out_ios = { &_idxs, new_val ? &_items : NULL };
     
     dummy_fetches_stream_prog prog (idx, new_val, this);
 
@@ -396,40 +403,33 @@ void Array::repermute ()
 					lgN_ceil(N), 7, _prov_fact));
     p2->randomize();
 
-    // a container for the new permuted array.
-    // its IOFilterEncrypt will setup the new keys
-    shared_ptr<FlatIO> p2_cont_io (new FlatIO (_array_io.getName() + "-p2",
-					       std::make_pair (N, _elem_size)));
-#ifndef NO_ENCRYPT
-    p2_cont_io->appendFilter (
-	auto_ptr<HostIOFilter> (
-	    new IOFilterEncrypt (
-		p2_cont_io.get(),
-		shared_ptr<SymWrapper> (new SymWrapper (_prov_fact)))));
-#endif
+    // if we only have one ArrayA and multiple branches, need to duplicate the
+    // ArrayA
+    if (_num_branches > 1 && !have_mult_As())
+    {
+	shared_ptr<ArrayA> A = getA();
+	_As = std::vector<boost::shared_ptr<ArrayA> > (_Ts.size());
+	_As[0] = A;
+	
+	// HACK: get the valid branch numbers by iterating through _Ts and
+	// seeing if a T is at each i
+	for (unsigned i=1; i < _Ts.size(); i++)
+	{
+	    if (_Ts[i])
+	    {
+		_As[i] = A.duplicate (i);
+	    }
+	}
+    }
 
-    // copy values across
-    stream_process ( identity_itemproc,
-		     zero_to_n (N),
-		     &_array_io,
-		     &(*p2_cont_io) );
-
+    repermute_As ();
     
-    // run the re-permutation on the new container
-    shared_ptr<ForwardPermutation> reperm (new RePermutation (*_p, *p2));
-
-    Shuffler shuffler  (p2_cont_io, reperm, N);
-    shuffler.shuffle ();
-
-//    p2_cont_io->flush();
     
-    // install the new parameters
-    _array_io = *p2_cont_io;
-
     _p = p2;
 
     _num_retrievals = 0;
 }
+
 
 
 struct rand_idx_and_have_idx
@@ -464,104 +464,37 @@ struct rand_idx_and_have_idx
 };
 
 
-struct insert_new_touched
-{
-    // this one works on batches of two, one from T.idxs and one from T.items
 
-    enum {
-	IDX = 0,
-	ITEM = 1
-    };
-    
-    insert_new_touched (index_t new_idx, const ByteBuffer& new_item)
-	{
-	    inhand.idx	= new_idx;
-	    inhand.item = new_item;
-	}
-
-    void operator() (const boost::array<index_t,2>& idxs,
-		     const boost::array<ByteBuffer,2>& objs,
-		     boost::array<ByteBuffer,2>& o_objs)
-	{
-	    index_t T_i = bb2basic<index_t> (objs[IDX]);
-
-	    assert (((void)"insert_new_touched() should see each T_i only once",
-		     T_i != inhand.idx));
-	    
-	    o_objs[ITEM] = objs[ITEM];
-
-	    // return the smaller-numbered item, keep the bigger one
-	    if (T_i > inhand.idx) {
-		std::swap (inhand.idx, T_i);
-		std::swap (inhand.item, o_objs[ITEM]);
-	    }
-
-	    o_objs[IDX] = basic2bb (T_i);
-	}
-
-    struct {
-	index_t idx;
-	ByteBuffer item;
-    } inhand;
-
-};
-
-
-/// add a new distinct element to T (#_workarea.idxs):  either idx or a random
+/// add a new distinct element to T:  either idx or a random
 /// index (not already in T).
 ///
 /// working with physical indices here
-void Array::append_new_working_item (index_t idx)
+void Array::append_new_working_item (index_t idx, index_t branch)
     throw (better_exception)
 {
-
-    bool have_target;
-    bool good_rand = false;
     index_t rand_idx;
-    // need to find a random untouched index regardless of whether we need it
-    // (ie. target_idx is already touched)
-    while (!good_rand)
+    optional<index_t> to_append;
+    while (!to_append)
     {
 	rand_idx = _rand_prov->randint (N);
-	LOG (Log::PROGRESS, logger,
+	LOG (Log::DEBUG, logger,
 	     "While accessing physical idx " << idx << ", trying rand_idx " << rand_idx);
-	rand_idx_and_have_idx prog (idx, rand_idx);
-	stream_process (prog,
-			zero_to_n (_num_retrievals),
-			&_workarea.idxs,
-			NULL);
-
-	good_rand   = !prog.have_rand;
-	have_target = prog.have_target;
+	to_append = _Ts[branch]->find_fetch_idx (rand_idx, idx);
     }
 
-    index_t to_append = have_target ? rand_idx : idx;
-
-    // grab the object at to_append, and insert it and its index into _workarea
+    // grab the object at to_append
     ByteBuffer obj;
-    _array_io.read (to_append, obj);
+    getA(branch)->_io.read (*to_append, obj);
+
+    // append it to all our Ts
+    for (unsigned i=0; i < _Ts.size(); i++)
     {
-	insert_new_touched prog (to_append, obj);
-
-	boost::array<FlatIO*,2> in_ios =  { &_workarea.idxs, &_workarea.items };
-	boost::array<FlatIO*,2> out_ios = { &_workarea.idxs, &_workarea.items };
-	
-	stream_process (prog,
-			zero_to_n<2> (_num_retrievals),
-			in_ios,
-			out_ios,
-			boost::mpl::size_t<1>(), // batch size
-			boost::mpl::size_t<2>()	// number of I/O channels
-			);
-
-	// and write in the largest-indexed item at the end of work area.
-	_workarea.idxs.write (_num_retrievals, basic2bb (prog.inhand.idx));
-	_workarea.items.write (_num_retrievals, prog.inhand.item);
+	if (_Ts[i]) _Ts[i]->appendItem (*to_append, obj);
     }
 	
-    // maintain invariant on the _workarea and _num_retrievals
     _num_retrievals++;
 }
+
 
 
 
@@ -593,3 +526,212 @@ void Array::append_new_working_item (index_t idx)
        the entire A, and then repermute?
   - which permutation do we use? the selected array's?
 */
+
+
+// get tha A for this branch
+shared_ptr<Array::ArrayA> & Array::getA (index_t branch);
+{
+    class A_getter : public boost::static_visitor<ArrayA&>
+    {
+    public:
+	A_getter (index_t branch)
+	    : branch (branch) {}
+	ArrayA& operator() (boost::shared_ptr<ArrayA>& arr) const {
+	    return arr;
+	}
+	ArrayA& operator() (std::vector<boost::shared_ptr<ArrayA> > & arrs) {
+	    return arrs[branch];
+	}
+    private:
+	index_t branch;
+    };
+	    
+
+    return boost::apply_visitor ( A_getter(branch), _As);
+};
+
+bool Array::have_mult_As()
+{
+    struct A_is_mult : public boost::static_visitor<bool>
+    {
+	bool operator() (boost::shared_ptr<ArrayA>& arr) const {
+	    return false;
+	}
+	bool operator() (std::vector<boost::shared_ptr<ArrayA> > & arrs) const {
+	    return true;
+	}
+    };
+
+    return boost::apply_visitor (A_is_mult(), _As);
+}
+
+void Array::repermute_As(const shared_ptr<TwoWayPermutation>& old_p,
+			 const shared_ptr<TwoWayPermutation>& new_p)
+{
+    // use the boost::get approach here.
+    if ( shared_ptr<ArrayA> * arr = boost::get<shared_ptr<ArrayA> > (&_As) )
+    {
+	(*arr)->repermute (old_p, new_p);
+    }
+    else if (vector<shared_ptr<ArrayA> > * arrs =
+	     boost::get<vector<shared_ptr<ArrayA> > > (&_As))
+    {
+	    FOREACH (arr, *arrs) {
+		(*arr)->repermute (old_p, new_p);
+	    }
+    }
+    else {
+	LOG (Log::ERROR, _logger,
+	     "repermute_As did not find anything in _As!");
+    }
+}
+
+
+//
+//
+// class ArrayT
+//
+//
+
+Array::ArrayT::ArrayT (const std::string& name, /// the array name
+		       size_t max_retrievals,
+		       size_t elem_size)
+    : _array_name (name),
+      _branch (0),
+      _idxs (_array_name + DIRSEP + "touched" + DIRSEP + "branch-0-idxs",
+	     Just (std::make_pair (max_retrievals, sizeof(index_t)))),
+      _items (_array_name + DIRSEP + "touched" + DIRSEP + "branch-0-items",
+	      Just (std::make_pair (max_retrievals, elem_size))),
+      _num_retrievals (0)
+{}
+
+
+boost::optional<index_t>
+Array::ArrayT::
+find_fetch_idx (index_t rand_idx, index_t target_idx)
+{
+    rand_idx_and_have_idx prog (target_idx, rand_idx);
+    stream_process (prog,
+		    zero_to_n (_num_retrievals),
+		    &_idxs,
+		    NULL);
+    
+    return prog.have_rand ?
+	(prog.have_target ? rand_idx : target_idx) :
+	boost::none;
+}
+
+ByteBuffer
+Array::ArrayT::
+do_dummy_accesses (index_t target_index,
+		   const boost::optional < std::pair<size_t, ByteBuffer> >& new_val)
+{
+    boost::array<FlatIO*,2> in_ios =  { &_idxs, &_items };
+    boost::array<FlatIO*,2> out_ios = { &_idxs, new_val ? &_items : NULL };
+    
+    dummy_fetches_stream_prog prog (target_index, new_val,
+				    _items.getElemSize());
+
+    stream_process (prog,
+		    zero_to_n<2> (_num_retrievals),
+		    in_ios,
+		    out_ios,
+		    boost::mpl::size_t<1> (), // number of items/idxs in an
+					      // invocation of prog
+		    boost::mpl::size_t<2> ()); // the number of I/O streams
+
+    return prog.getTheItem ();
+}
+
+void
+Array::ArrayT::
+appendItem (index_t idx, const ByteBuffer& item)
+{
+    _idxs.write (_num_retrievals, basic2bb (idx));
+    _items.write (_num_retrievals, item);
+    ++_num_retrievals;
+}
+
+ArrayT
+Array::ArrayT::
+duplicate (index_t new_branch)
+{
+    return ArrayT (*this, new_branch);
+}
+
+Array::ArrayT::ArrayT (const ArrayT& b,
+		       unsigned branch_num) // this will be the b-th branch
+
+    : _array_name (b._array_name),
+      _branch (branch_num),
+      _idxs (_array_name + DIRSEP + "touched" + DIRSEP + "branch-" +
+	     itoa(_branch) + "-idxs",
+	     Just (std::make_pair (b._idxs.getLen(), b._idxs.getElemSize()))),
+      _items (_array_name + DIRSEP + "touched" + DIRSEP + "branch-" +
+	      itoa(_branch) + "-items",
+	      Just (std::make_pair (b._items.getLen(), b._items.getElemSize()))),
+      _num_retrievals (b._num_retrievals)
+{
+    // need to copy the elements across
+    array<FlatIO*,2> in_ios = { &b._idxs, &b._items };
+    array<FlatIO*,2> out_ios = { &_idxs, &_items };
+
+    stream_process (identity_itemproc<2>,
+		    zero_to_n<2> (_num_retrievals),
+		    in_ios,
+		    out_ios,
+		    boost::mpl::size_t<1> (),
+		    boost::mpl::size_t<2> ());
+}
+
+
+
+//
+// class ArrayA
+//
+
+Array::ArrayA::ArrayA (const std::string& name, /// the array name
+		       const boost::optional <std::pair<size_t, size_t> >& size_params)
+    : _io (name + DIRSEP + "array-0",
+	   size_params)
+	   
+{
+    if (!size_params)
+    {
+	N 	   = _io.getLen();
+	_elem_size = _io.getElemSize();
+    }
+}
+
+void
+Array::ArrayA::repermute (const shared_ptr<TwoWayPermutation>& old_p,
+			  const shared_ptr<TwoWayPermutation>& new_p,
+			  CryptoProviderFactory * prov_fact)
+{
+    // a container for the new permuted array.
+    // its IOFilterEncrypt will setup the new keys
+    shared_ptr<FlatIO> p2_cont_io (new FlatIO (_io.getName() + "-p2",
+					       std::make_pair (N, _elem_size)));
+#ifndef NO_ENCRYPT
+    p2_cont_io->appendFilter (
+	auto_ptr<HostIOFilter> (
+	    new IOFilterEncrypt (
+		p2_cont_io.get(),
+		new SymWrapper (prov_fact))));
+#endif
+
+    // copy values across
+    stream_process ( identity_itemproc,
+		     zero_to_n (N),
+		     &_io,
+		     &(*p2_cont_io) );
+
+    // run the re-permutation on the new container
+    shared_ptr<ForwardPermutation> reperm (new RePermutation (old_p, new_p));
+
+    Shuffler shuffler  (p2_cont_io, reperm, N);
+    shuffler.shuffle ();
+
+    // install the new parameters
+    _io = *p2_cont_io;
+}    
