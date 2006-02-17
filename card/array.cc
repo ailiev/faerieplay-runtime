@@ -94,30 +94,28 @@ Array::Array (const string& name,
 	      const boost::optional <pair<size_t, size_t> >& size_params,
               CryptoProviderFactory * prov_fact)
     : _name		(name),
-      _array_cont	(name + ARRAY_NAME),
-//      _workarea_idxs_name	(name + "-touched"),
       
       N			(size_params ? size_params->first  : 0),
       _elem_size	(size_params ? size_params->second : 0),
       
-//      _max_retrievals	(lrint (sqrt(float(N))) * lgN_floor(N)),
-
       _prov_fact	(prov_fact),
+      _rand_prov	(_prov_fact->getRandProvider()),
 
-      _array_io		(_array_cont, size_params),
+      _Ts		(1),
+      _As		(1),
+      
+      _num_branches	(1),
+      _num_retrievals	(0)
 
-      _num_retrievals	(0),
-
-      _rand_prov	(_prov_fact->getRandProvider())
-
-//      _p		(auto_ptr<TwoWayPermutation> (new IdPerm (N))),
 {
+
+    _As[0] = new ArrayA (name, size_params, &N, &_elem_size);
 
     // if the array exists, get its sizes, and fill in the size-dependent
     // params.
     if (!size_params) {
-	N 	   = _array_io.getLen();
-	_elem_size = _array_io.getElemSize();
+	N 	   = _As[0]._io.getLen();
+	_elem_size = _As[0]._io.getElemSize();
     }
 
     _max_retrievals = lrint (sqrt(float(N))) *  lgN_floor(N);
@@ -129,72 +127,13 @@ Array::Array (const string& name,
     // init to identity permutation, and then do repermute()
     _p 		    = auto_ptr<TwoWayPermutation> (new IdPerm (N));
 
-    // set up the working area, with a list of indices and objects
-    // can't assign from a temporary unnamed FlatIO for some reason
-    FlatIO tmp_idxs (_name + IDXS_NAME,
-		     Just(std::make_pair (_max_retrievals, sizeof(size_t))));
-    FlatIO tmp_objs (_name + OBJS_NAME,
-		     Just(std::make_pair (_max_retrievals, _elem_size)));
-    _workarea.idxs = tmp_idxs;
-    _workarea.items = tmp_objs;
-    
+    _Ts[0] = new ArrayT (_name, _max_retrievals, _elem_size, &_num_retrievals);
 
-    // add encrypt/decrypt filters to all the IO objects.
-    FlatIO * ios [] = { &_array_io, &_workarea.idxs, &_workarea.items };
-    for (unsigned i=0; i < ARRLEN(ios); i++) {
-#ifndef NO_ENCRYPT
-	ios[i]->appendFilter (
-	    auto_ptr<HostIOFilter>
-	    (new IOFilterEncrypt (ios[i],
-				  shared_ptr<SymWrapper>
-				  (new SymWrapper (_prov_fact)))));
-#endif
-    }
-
-    // if array is new, fill out with nulls.
-    if (size_params)
-    {
-	ByteBuffer zero (_elem_size);
-	zero.set (0);
-	stream_process (make_generate_proc_adapter (make_fconst(zero)),
-			zero_to_n (N),
-			NULL,
-			&_array_io);
-    }
-
+    // FIXME: may not want to repermute, if user is filling out the array with
+    // clear_write(), and wants to re-permute it thereafter.
     repermute();
 }
 
-
-Array::des_t Array::newArray (const std::string& name,
-			      size_t len, size_t elem_size,
-			      CryptoProviderFactory * crypt_fact)
-    throw (better_exception)
-{
-    shared_ptr<Array> arrptr (new Array (name,
-					 Just (std::make_pair (len, elem_size)),
-					 crypt_fact));
-
-    des_t idx = _next_array_num++;
-
-    // there should be no entry with idx
-    assert (_arrays.find(idx) == _arrays.end() );
-    
-    _arrays[idx] = arrptr;
-
-    return idx;
-}
-
-
-Array & Array::getArray (Array::des_t arr)
-{
-    map_t::iterator arr_i = _arrays.find (arr);
-    if (arr_i == _arrays.end()) {
-	throw bad_arg_exception ("Array::getArray: non-existent array requested");
-    }
-
-    return *(arr_i->second);
-}
 
 
 void Array::write_clear (index_t idx, const ByteBuffer& val)
@@ -377,39 +316,23 @@ ByteBuffer Array::do_dummy_fetches (index_t idx,
 
 void Array::repermute ()
 {
-    // steps:
-    // - generate new permutation
-    // - set up re-permute object, with:
-    //  - 
-
 
 #ifndef NO_REFETCHES
+    // copy values out of the working area and into the main array
+    for (unsigned b=0; b < _As.size(); b++)
     {
-	// copy values out of the working area and into the main array
-
-	ByteBuffer item, idxbuf;
-	for (index_t i=0; i < _num_retrievals; i++)
+	if (_As[b])
 	{
-	    _workarea.idxs.read  (i, idxbuf);
-	    _workarea.items.read (i, item);
-
-	    _array_io.write (bb2basic<index_t> (idxbuf), item);
+	    merge (_Ts[b], _As[b]);
 	}
     }
 #endif // NO_REFETCHES
 	
-    // the new permutation
-    auto_ptr<TwoWayPermutation> p2 (new LRPermutation (
-					lgN_ceil(N), 7, _prov_fact));
-    p2->randomize();
-
     // if we only have one ArrayA and multiple branches, need to duplicate the
     // ArrayA
-    if (_num_branches > 1 && !have_mult_As())
+    if (_num_branches > 1 && _As.size() == 1)
     {
-	shared_ptr<ArrayA> A = getA();
-	_As = std::vector<boost::shared_ptr<ArrayA> > (_Ts.size());
-	_As[0] = A;
+	_As.resize (_Ts.size());
 	
 	// HACK: get the valid branch numbers by iterating through _Ts and
 	// seeing if a T is at each i
@@ -417,13 +340,17 @@ void Array::repermute ()
 	{
 	    if (_Ts[i])
 	    {
-		_As[i] = A.duplicate (i);
+		_As[i] = _As[0].duplicate (i);
 	    }
 	}
     }
 
-    repermute_As ();
-    
+    // the new permutation
+    auto_ptr<TwoWayPermutation> p2 (new LRPermutation (
+					lgN_ceil(N), 7, _prov_fact));
+    p2->randomize();
+
+    repermute_As (_p, p2);
     
     _p = p2;
 
@@ -528,61 +455,13 @@ void Array::append_new_working_item (index_t idx, index_t branch)
 */
 
 
-// get tha A for this branch
-shared_ptr<Array::ArrayA> & Array::getA (index_t branch);
-{
-    class A_getter : public boost::static_visitor<ArrayA&>
-    {
-    public:
-	A_getter (index_t branch)
-	    : branch (branch) {}
-	ArrayA& operator() (boost::shared_ptr<ArrayA>& arr) const {
-	    return arr;
-	}
-	ArrayA& operator() (std::vector<boost::shared_ptr<ArrayA> > & arrs) {
-	    return arrs[branch];
-	}
-    private:
-	index_t branch;
-    };
-	    
 
-    return boost::apply_visitor ( A_getter(branch), _As);
-};
-
-bool Array::have_mult_As()
-{
-    struct A_is_mult : public boost::static_visitor<bool>
-    {
-	bool operator() (boost::shared_ptr<ArrayA>& arr) const {
-	    return false;
-	}
-	bool operator() (std::vector<boost::shared_ptr<ArrayA> > & arrs) const {
-	    return true;
-	}
-    };
-
-    return boost::apply_visitor (A_is_mult(), _As);
-}
 
 void Array::repermute_As(const shared_ptr<TwoWayPermutation>& old_p,
 			 const shared_ptr<TwoWayPermutation>& new_p)
 {
-    // use the boost::get approach here.
-    if ( shared_ptr<ArrayA> * arr = boost::get<shared_ptr<ArrayA> > (&_As) )
-    {
-	(*arr)->repermute (old_p, new_p);
-    }
-    else if (vector<shared_ptr<ArrayA> > * arrs =
-	     boost::get<vector<shared_ptr<ArrayA> > > (&_As))
-    {
-	    FOREACH (arr, *arrs) {
-		(*arr)->repermute (old_p, new_p);
-	    }
-    }
-    else {
-	LOG (Log::ERROR, _logger,
-	     "repermute_As did not find anything in _As!");
+    FOREACH (A, _As) {
+	if (*A) (*A)->repermute (old_p, new_p);
     }
 }
 
@@ -595,15 +474,30 @@ void Array::repermute_As(const shared_ptr<TwoWayPermutation>& old_p,
 
 Array::ArrayT::ArrayT (const std::string& name, /// the array name
 		       size_t max_retrievals,
-		       size_t elem_size)
+		       size_t elem_size,
+		       const size_t * p_num_retrievals,
+		       CryptoProviderFactory * prov_fact)
     : _array_name (name),
       _branch (0),
       _idxs (_array_name + DIRSEP + "touched" + DIRSEP + "branch-0-idxs",
 	     Just (std::make_pair (max_retrievals, sizeof(index_t)))),
       _items (_array_name + DIRSEP + "touched" + DIRSEP + "branch-0-items",
 	      Just (std::make_pair (max_retrievals, elem_size))),
-      _num_retrievals (0)
-{}
+      _num_retrievals (p_num_retrievals)
+{
+    // add encrypt/decrypt filters to all the IO objects.
+    FlatIO * ios [] = { &_idxs, &_items };
+    for (unsigned i=0; i < ARRLEN(ios); i++) {
+#ifndef NO_ENCRYPT
+	ios[i]->appendFilter (
+	    auto_ptr<HostIOFilter>
+	    (new IOFilterEncrypt (ios[i],
+				  shared_ptr<SymWrapper>
+				  (new SymWrapper (prov_fact)))));
+#endif
+    }
+    
+}
 
 
 boost::optional<index_t>
@@ -612,7 +506,7 @@ find_fetch_idx (index_t rand_idx, index_t target_idx)
 {
     rand_idx_and_have_idx prog (target_idx, rand_idx);
     stream_process (prog,
-		    zero_to_n (_num_retrievals),
+		    zero_to_n (*_num_retrievals),
 		    &_idxs,
 		    NULL);
     
@@ -633,7 +527,7 @@ do_dummy_accesses (index_t target_index,
 				    _items.getElemSize());
 
     stream_process (prog,
-		    zero_to_n<2> (_num_retrievals),
+		    zero_to_n<2> (*_num_retrievals),
 		    in_ios,
 		    out_ios,
 		    boost::mpl::size_t<1> (), // number of items/idxs in an
@@ -647,9 +541,8 @@ void
 Array::ArrayT::
 appendItem (index_t idx, const ByteBuffer& item)
 {
-    _idxs.write (_num_retrievals, basic2bb (idx));
-    _items.write (_num_retrievals, item);
-    ++_num_retrievals;
+    _idxs.write (*_num_retrievals, basic2bb (idx));
+    _items.write (*_num_retrievals, item);
 }
 
 ArrayT
@@ -691,17 +584,33 @@ Array::ArrayT::ArrayT (const ArrayT& b,
 //
 
 Array::ArrayA::ArrayA (const std::string& name, /// the array name
-		       const boost::optional <std::pair<size_t, size_t> >& size_params)
+		       const optional<pair<size_t, size_t> >& size_params,
+		       CryptoProviderFactory *  prov_fact)
     : _io (name + DIRSEP + "array-0",
 	   size_params)
 	   
 {
-    if (!size_params)
+#ifndef NO_ENCRYPT
+    // add encrypt/decrypt filter.
+    _io.appendFilter (
+	auto_ptr<HostIOFilter>
+	(new IOFilterEncrypt (&_io,
+			      shared_ptr<SymWrapper>
+			      (new SymWrapper (prov_fact)))));
+#endif
+
+    // if array is new, fill out with nulls.
+    if (size_params)
     {
-	N 	   = _io.getLen();
-	_elem_size = _io.getElemSize();
+	ByteBuffer zero (size_params->second); // the element size
+	zero.set (0);
+	stream_process (make_generate_proc_adapter (make_fconst(zero)),
+			zero_to_n (size_params->first),	// array length
+			NULL,
+			&_io);
     }
 }
+
 
 void
 Array::ArrayA::repermute (const shared_ptr<TwoWayPermutation>& old_p,
@@ -711,7 +620,7 @@ Array::ArrayA::repermute (const shared_ptr<TwoWayPermutation>& old_p,
     // a container for the new permuted array.
     // its IOFilterEncrypt will setup the new keys
     shared_ptr<FlatIO> p2_cont_io (new FlatIO (_io.getName() + "-p2",
-					       std::make_pair (N, _elem_size)));
+					       std::make_pair (*N, *_elem_size)));
 #ifndef NO_ENCRYPT
     p2_cont_io->appendFilter (
 	auto_ptr<HostIOFilter> (
@@ -722,16 +631,123 @@ Array::ArrayA::repermute (const shared_ptr<TwoWayPermutation>& old_p,
 
     // copy values across
     stream_process ( identity_itemproc,
-		     zero_to_n (N),
+		     zero_to_n (*N),
 		     &_io,
 		     &(*p2_cont_io) );
 
     // run the re-permutation on the new container
     shared_ptr<ForwardPermutation> reperm (new RePermutation (old_p, new_p));
 
-    Shuffler shuffler  (p2_cont_io, reperm, N);
+    Shuffler shuffler  (p2_cont_io, reperm, *N);
     shuffler.shuffle ();
 
     // install the new parameters
     _io = *p2_cont_io;
 }    
+
+
+
+
+//
+// class ArrayHandle
+//
+
+ArrayHandle::des_t ArrayHandle::newArray (const std::string& name,
+					  size_t len, size_t elem_size,
+					  CryptoProviderFactory * crypt_fact)
+    throw (better_exception)
+{
+    shared_ptr<Array> arrptr (new Array (name,
+					 Just (std::make_pair (len, elem_size)),
+					 crypt_fact));
+
+    insert_arr (arrptr);
+}
+
+ArrayHandle::des_t ArrayHandle::newArray (const std::string& name,
+					  CryptoProviderFactory * crypt_fact)
+    throw (better_exception)
+{
+    shared_ptr<Array> arrptr (new Array (name,
+					 none,
+					 crypt_fact));
+
+    insert_arr (arrptr);
+}
+
+
+ArrayHandle::des_t
+ArrayHandle::insert_arr (const boost::shared_ptr<Array>& arr)
+{
+    des_t idx = _next_array_num++;
+
+    // there should be no entry with idx
+    assert (_arrays.find(idx) == _arrays.end() );
+    
+    _arrays[idx] = ArrayHandle (arrptr, 0); // branch 0
+
+    return idx;
+}    
+
+
+ArrayHandle & ArrayHandle::getArray (ArrayHandle::des_t desc)
+{
+    map_t::iterator arr_i = _arrays.find (arr);
+    if (arr_i == _arrays.end()) {
+	throw bad_arg_exception ("Array::getArray: non-existent array requested");
+    }
+
+    return arr_i->first;
+}
+
+
+
+ArrayHandle &
+ArrayHandle::write (unsigned depth,
+		    index_t idx, size_t off,
+		    const ByteBuffer& val);
+throw (better_exception)
+{
+    if (depth > _last_depth)
+    {
+	// new branch!
+	index_t new_branch = _arr->newBranch (_branch);
+
+	// add a new Handle with this branch number to the map
+	des_t idx = _next_array_num++;
+	ArrayHandle newh (_arr, new_branch, depth, idx);
+	_arrays[idx] = newh;
+
+	return newh.write (depth, idx, off, val);
+    }
+
+    _arr->write (idx, off, _branch, val);
+    return *this;
+}
+
+
+/// Read the value from an array index.
+/// Encapsulates all the re-fetching and permuting, etc.
+/// @param idx the index
+/// @return new ByteBuffer with the value
+ArrayHandle&
+ArrayHandle::read (unsigned depth, index_t i,
+		   ByteBuffer & out);
+throw (better_exception)
+{
+    if (depth > _last_depth)
+    {
+	// new branch!
+	index_t new_branch = _arr->newBranch (_branch);
+
+	// add a new Handle with this branch number to the map
+	des_t idx = _next_array_num++;
+	ArrayHandle newh (_arr, new_branch, depth, idx);
+	_arrays[idx] = newh;
+	// pass on the read to the new guy
+	return newh.read (depth, i, out);
+    }
+
+    out = _arr->read (i, _branch);
+    return *this;
+}
