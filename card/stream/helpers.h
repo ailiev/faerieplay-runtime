@@ -13,13 +13,33 @@
 #define _STREAM_HELPERS_H
 
 
+OPEN_NS
+
+/// identity item procedure for #stream_process, on arbitrary size batches
+template <size_t N=1U>
+struct identity_itemproc
+{
+    void operator() (const boost::array<size_t,N> &,
+		     const boost::array<ByteBuffer,N> & in,
+		     boost::array<ByteBuffer,N> & out) const
+	{
+	    out = in;
+	}
+};
+
 /// identity item procedure for #stream_process, on batches of size 1 (without
 /// using boost::array)
-inline void identity_itemproc (size_t i, const ByteBuffer& in,
-			       ByteBuffer & out)
+template<> struct identity_itemproc<1U>
 {
-    out = in;
-}
+    void operator() (size_t i, const ByteBuffer& in,
+		     ByteBuffer & out) const
+	{
+	    out = in;
+	}
+};
+
+
+
 
 /// function object adapter to adapt an adaptable binary function working on a
 /// basic C++ type, to a standard one working on ByteBuffer.
@@ -249,6 +269,8 @@ zero_to_n (index_t N)
 //     out = in;
 // }
 
+
+CLOSE_NS
 
 
 #endif // _STREAM_HELPERS_H
