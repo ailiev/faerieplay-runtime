@@ -38,15 +38,15 @@
 // debug:
 // myvalgrind.sh --tool=memcheck --num-callers=18 /home/sasho/work/code/sfdl-runtime/card/runtime -n v0
 
-using namespace std;
 
-
-auto_ptr<CryptoProviderFactory> g_provfact;
+std::auto_ptr<CryptoProviderFactory> g_provfact;
 
 
 
 
-static void exception_exit (const std::exception& ex, const string& msg) {
+static void exception_exit (const std::exception& ex, const std::string& msg) {
+    using namespace std;
+    
     cerr << msg << ":" << endl
 	 << ex.what() << endl
 	 << "Exiting ..." << endl;
@@ -55,6 +55,8 @@ static void exception_exit (const std::exception& ex, const string& msg) {
 
 #include <signal.h>		// for raise()
 void out_of_memory () {
+    using namespace std;
+    
     cerr << "Out of memory!" << endl;
     // trigger a SEGV, so we can get a core dump	    
     // * ((int*) (0x0)) = 42;
@@ -66,6 +68,8 @@ void out_of_memory () {
 
 
 static void usage (const char* progname) {
+    using namespace std;
+    
     cerr << "Usage: " << progname << " [-p <card server por>]" << endl
 	 << "\t[-d <crypto dir>]" << endl
 	 << "\t[-c (use 4758 crypto hw?)]" << endl
@@ -78,6 +82,9 @@ static void usage (const char* progname) {
 
 int main (int argc, char *argv[]) {
 
+    using namespace std;
+    using namespace pir;
+    
     set_new_handler (out_of_memory);
 
     init_default_configs ();
@@ -111,6 +118,7 @@ int main (int argc, char *argv[]) {
 
 
 
+OPEN_NS
 
 //
 //
@@ -118,6 +126,9 @@ int main (int argc, char *argv[]) {
 //
 //
 
+using std::auto_ptr;
+using std::string;
+using std::vector;
 
 using boost::shared_ptr;
 
@@ -269,9 +280,10 @@ void CircuitEval::do_gate (const gate_t& g)
 	ByteBuffer arr_ptr = get_gate_val (g.inputs[0]);
 	int idx = get_int_val (g.inputs[1]);
 	
-	ByteBuffer read_res = do_read_array (arr_ptr, idx);
+	ByteBuffer val;
+	ByteBuffer arr2 = do_read_array (arr_ptr, idx, g.depth, val);
 
-	ByteBuffer outs [] = {  arr_ptr, read_res };
+	ByteBuffer outs [] = {  arr2, val };
 	res_bytes = concat_bufs (outs, outs + ARRLEN(outs));
 
 	LOG (Log::DEBUG, logger,
@@ -296,8 +308,8 @@ void CircuitEval::do_gate (const gate_t& g)
 	transform (g.inputs.begin()+2,
 		   g.inputs.end(),
 		   vals.begin(),
-		   bind1st (mem_fun (&CircuitEval::get_gate_val),
-			    this));
+		   std::bind1st (std::mem_fun (&CircuitEval::get_gate_val),
+				 this));
 
 	// concatenate the inputs
 	ByteBuffer ins = concat_bufs (vals.begin(), vals.end());
@@ -306,15 +318,16 @@ void CircuitEval::do_gate (const gate_t& g)
 	gate_t arr_gate;
 	read_gate (arr_gate, arr_gate_num);
 
-	do_write_array (arr_ptr,
-			off,
-			len >= 0 ? Just((size_t)len) : none,			
-			idx,
-			ins,
-			arr_gate.depth, g.depth);
+	ByteBuffer arr_desc2 = do_write_array (
+	    arr_ptr,
+	    off,
+	    len >= 0 ? Just((size_t)len) : none,			
+	    idx,
+	    ins,
+	    arr_gate.depth, g.depth);
 
 	// return the array pointer
-	res_bytes = arr_ptr;
+	res_bytes = arr_desc2;
     }
     break;
 
@@ -348,11 +361,13 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	// create a new array, give it a number and add it to the map (done
 	// internally by newArray), and write the number as the gate value
-	Array::des_t arr_num = Array::newArray (g.comment,
-						len, elem_size,
-						g_provfact.get());
+	ArrayHandle::des_t arr_desc = ArrayHandle::newArray (g.comment,
+							     len, elem_size,
+							     g_provfact.get(),
+							     g.depth);
 
-	res_bytes = ByteBuffer (&arr_num, sizeof(arr_num), ByteBuffer::DEEP);
+	
+	res_bytes = ByteBuffer (&arr_desc, sizeof(arr_desc), ByteBuffer::deepcopy());
     }
     break;
     
@@ -365,9 +380,9 @@ void CircuitEval::do_gate (const gate_t& g)
     }
 
     LOG (Log::DEBUG, gate_logger,
-	 setiosflags(ios::left)
-	 << setw(6) << g.num
-	 << setw(12) << res
+	 std::setiosflags(std::ios::left)
+	 << std::setw(6) << g.num
+	 << std::setw(12) << res
 	 << res_bytes);
     
     if (res_bytes.len() > 0) {
@@ -379,7 +394,7 @@ void CircuitEval::do_gate (const gate_t& g)
 	int intval;
 	assert (res_bytes.len() == sizeof(intval));
 	memcpy (&intval, res_bytes.data(), sizeof(intval));
-	cout << "Output " << g.comment << ": " << intval << endl;
+	std::cout << "Output " << g.comment << ": " << intval << std::endl;
     }
 }
 
@@ -434,20 +449,25 @@ string CircuitEval::get_string_val (int gate_num)
 
 
 ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
-				       index_t idx)
+				       index_t idx,
+				       unsigned depth,
+				       ByteBuffer & o_val)
 {
-    Array::des_t desc;
+    ArrayHandle::des_t desc;
 
     assert (arr_ptr.len() == sizeof(desc));
     memcpy (&desc, arr_ptr.data(), sizeof(desc));
 
-    Array & arr = Array::getArray (desc);
+    ArrayHandle & arr = ArrayHandle::getArray (desc);
 
-    return arr.read (idx);
+    ArrayHandle& arr2 = arr.read (idx, o_val, depth);
+    return ByteBuffer (&arr2.getDescriptor(),
+		       sizeof (arr2.getDescriptor()),
+		       ByteBuffer::deepcopy());
 }
 
 
-void CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
+ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
 				  size_t off,
 				  optional<size_t> len,
 				  index_t idx,
@@ -455,16 +475,23 @@ void CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
 				  int prev_depth, int this_depth)
     
 {
-    Array::des_t arr_ptr;
+    ArrayHandle::des_t desc;
 
     if (len)
     {
 	assert (*len == new_val.len());
     }
     
-    assert (arr_ptr_buf.len() == sizeof(arr_ptr));
-    memcpy (&arr_ptr, arr_ptr_buf.data(), sizeof(arr_ptr));
+    assert (arr_ptr_buf.len() == sizeof(desc));
+    memcpy (&desc, arr_ptr_buf.data(), sizeof(desc));
 
-    Array & arr = Array::getArray (arr_ptr);
-    arr.write (idx, off, new_val);
+    ArrayHandle & arr = ArrayHandle::getArray (desc);
+    ArrayHandle & arr2 = arr.write (idx, off, new_val, this_depth);
+
+    return ByteBuffer (&arr2.getDescriptor(),
+		       sizeof (arr2.getDescriptor()),
+		       ByteBuffer::deepcopy());
 }
+
+
+CLOSE_NS

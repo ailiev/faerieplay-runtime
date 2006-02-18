@@ -65,7 +65,7 @@ struct basictype_itemproc {
 	    
 	    y = f (i, x);
 
-	    out = ByteBuffer (&y, sizeof(y), ByteBuffer::DEEP);
+	    out = ByteBuffer (&y, sizeof(y), ByteBuffer::deepcopy());
 	}
 
 private:

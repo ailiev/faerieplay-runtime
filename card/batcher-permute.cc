@@ -68,6 +68,11 @@ namespace {
 }
 
 
+
+
+OPEN_NS
+
+
 Shuffler::Shuffler (shared_ptr<FlatIO> container,
 		    shared_ptr<ForwardPermutation> p,
 		    size_t N)
@@ -291,3 +296,6 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
 
     
 }
+
+
+CLOSE_NS

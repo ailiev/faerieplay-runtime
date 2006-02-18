@@ -14,6 +14,10 @@
 #ifndef _RUN_CIRCUIT_H
 #define _RUN_CIRCUIT_H
 
+
+OPEN_NS
+
+
 class CircuitEval
 {
 
@@ -32,15 +36,19 @@ private:
     void read_gate (gate_t & o_gate,
 		    int gate_num);
 
+    /// @return the descriptor of the resulting array
     ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
-			      index_t idx);
+			      index_t idx,
+			      unsigned depth,
+			      ByteBuffer & o_val);
 
-    void do_write_array (const ByteBuffer& arr_ptr_buf,
-			 size_t off,
-			 boost::optional<size_t> len,
-			 index_t idx,
-			 const ByteBuffer& new_val,
-			 int prev_depth, int this_depth);
+    /// @return the descriptot of the resulting array
+    ByteBuffer do_write_array (const ByteBuffer& arr_ptr_buf,
+			       size_t off,
+			       boost::optional<size_t> len,
+			       index_t idx,
+			       const ByteBuffer& new_val,
+			       int prev_depth, int this_depth);
 
     /// get the current value at this gate's output
     int get_int_val (int gate_num);
@@ -67,6 +75,9 @@ public:
 
 
 DECL_STATIC_INIT_INSTANCE(CircuitEval);
+
+
+CLOSE_NS
 
 
 #endif // _RUN_CIRCUIT_H

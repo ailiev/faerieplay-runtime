@@ -43,6 +43,9 @@
 #define _SHUFFLE_H
 
 
+OPEN_NS
+
+
 class Shuffler {
 
 public:
@@ -152,6 +155,9 @@ private:
     static const size_t TAGSIZE = 4;
     
 };
+
+
+CLOSE_NS
 
 
 #endif // _SHUFFLE_H

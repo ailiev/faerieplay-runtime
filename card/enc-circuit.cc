@@ -35,6 +35,7 @@
 
 
 using namespace std;
+using namespace pir;
 
 using boost::shared_ptr;
 
@@ -114,7 +115,7 @@ int main (int argc, char *argv[])
 						      (provfact.get())))));
 
 	    // and transfer each object in the container
-	    stream_process ( identity_itemproc,
+	    stream_process ( identity_itemproc<>(),
 			     zero_to_n (num_objs),
 			     io,
 			     &temp );

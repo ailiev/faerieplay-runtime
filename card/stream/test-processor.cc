@@ -8,6 +8,9 @@
 
 #include <pir/card/io_flat.h>
 
+
+using namespace pir;
+
 void shortening_itemproc (index_t i,
 			  const ByteBuffer& in,
 			  ByteBuffer & out)
@@ -64,7 +67,7 @@ int main (int argc, char *argv[])
 
     cont1.write (idxs, to_write);
 
-    stream_process (identity_itemproc,
+    stream_process (identity_itemproc<>(),
 		    zero_to_n (N),
 		    &cont1,
 		    &cont2);

@@ -120,7 +120,7 @@ private:
 	std::string _name;
 	index_t _branch;	// our branch number
 
-	FlatIO _idxs, _items;
+	mutable FlatIO _idxs, _items;
 
 	/// how many retrievals already done this session?
 	/// make this point into the owner Array's _num_retrievals, who will
@@ -237,8 +237,7 @@ private:
 public:
     static Log::logger_t _logger;
     
-    DECL_STATIC_INIT( _logger = Log::makeLogger ("array",
-						 boost::none, boost::none); );
+    DECL_STATIC_INIT( _logger = Log::makeLogger ("array"); );
     
 };
 
@@ -269,15 +268,15 @@ public:
     /// this array.
     static des_t newArray (const std::string& name,
 			   size_t len, size_t elem_size,
-			   unsigned depth,
-			   CryptoProviderFactory * crypt_fact)
+			   CryptoProviderFactory * crypt_fact,
+			   unsigned depth)
 	throw (better_exception);
 
     /// in the case of an exisitng array, don;t provide any length params, but
     /// read them (and the atrray) of the host
     static des_t newArray (const std::string& name,
-			   unsigned depth,
-			   CryptoProviderFactory * crypt_fact)
+			   CryptoProviderFactory * crypt_fact,
+			   unsigned depth)
 	throw (better_exception);
 
 
@@ -290,11 +289,11 @@ public:
     /// @param sel_first if true select the first array, if false the second one.
     static ArrayHandle& select (ArrayHandle& a,
 				ArrayHandle& b,
-				unsigned depth,
-				bool sel_first);
+				bool sel_first,
+				unsigned depth);
 
-    /// return this ArrayHandle's descriptor
-    des_t getDescriptor()
+    /// return a reference to this ArrayHandle's descriptor
+    const des_t & getDescriptor() const
 	{
 	    return _desc;
 	}
@@ -307,9 +306,9 @@ public:
     /// @param idx the target index
     /// @param off the offset in bytes within that index, where we place the new
     /// value
-    ArrayHandle & write (unsigned depth,
-			 index_t idx, size_t off,
-			 const ByteBuffer& val)
+    ArrayHandle & write (index_t idx, size_t off,
+			 const ByteBuffer& val,
+			 unsigned depth)
 	throw (better_exception);
 
     /// Read the value from an array index.
@@ -317,7 +316,7 @@ public:
     /// @param idx the index
     /// @return new ByteBuffer with the value
     ArrayHandle&
-    read (unsigned depth, index_t i, ByteBuffer & out)
+    read (index_t i, ByteBuffer & out, unsigned depth)
 	throw (better_exception);
     
     /// Write a value non-hidden, probably during initialization.

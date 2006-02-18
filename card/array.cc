@@ -351,6 +351,19 @@ void Array::append_new_working_item (index_t idx, index_t branch)
 }
 
 
+/// merge a T into an A
+void
+Array::merge (const ArrayT& T, ArrayA& A)
+{
+    for (unsigned i=0; i < *T._num_retrievals; i++)
+    {
+	ByteBuffer item, idxbuf;
+	T._idxs .read (i, idxbuf);
+	T._items.read (i, item);
+
+	A._io.write (bb2basic<index_t>(idxbuf), item);
+    }
+}
 
 
 
@@ -546,9 +559,10 @@ find_fetch_idx (index_t rand_idx, index_t target_idx)
 		    &_idxs,
 		    NULL);
     
-    return prog.have_rand ?
-	( prog.have_target ? Just(rand_idx) : Just(target_idx) ) :
-	none;
+    return prog.have_rand   ?	// the suggested rand_idx is already present in
+				// T, so need to try another one.
+	none		    :
+	( prog.have_target ? Just(rand_idx) : Just(target_idx) );
 }
 
 
@@ -789,8 +803,8 @@ Array::ArrayA::repermute (const shared_ptr<TwoWayPermutation>& old_p,
 
 ArrayHandle::des_t ArrayHandle::newArray (const std::string& name,
 					  size_t len, size_t elem_size,
-					  unsigned depth,
-					  CryptoProviderFactory * crypt_fact)
+					  CryptoProviderFactory * crypt_fact,
+					  unsigned depth)
     throw (better_exception)
 {
     shared_ptr<Array> arrptr (new Array (name,
@@ -801,8 +815,8 @@ ArrayHandle::des_t ArrayHandle::newArray (const std::string& name,
 }
 
 ArrayHandle::des_t ArrayHandle::newArray (const std::string& name,
-					  unsigned depth,
-					  CryptoProviderFactory * crypt_fact)
+					  CryptoProviderFactory * crypt_fact,
+					  unsigned depth)
     throw (better_exception)
 {
     shared_ptr<Array> arrptr (new Array (name,
@@ -845,8 +859,8 @@ ArrayHandle & ArrayHandle::getArray (ArrayHandle::des_t desc)
 /// @param sel_first if true select the first array, if false the second one.
 ArrayHandle& ArrayHandle::select (ArrayHandle& a,
 				  ArrayHandle& b,
-				  unsigned depth,
-				  bool sel_first)
+				  bool sel_first,
+				  unsigned depth)
 {
     // the two Array objects should be the same
     if (a._arr.get() != b._arr.get())
@@ -871,9 +885,9 @@ ArrayHandle& ArrayHandle::select (ArrayHandle& a,
 
 
 ArrayHandle &
-ArrayHandle::write (unsigned depth,
-		    index_t idx, size_t off,
-		    const ByteBuffer& val)
+ArrayHandle::write (index_t idx, size_t off,
+		    const ByteBuffer& val,
+		    unsigned depth)
     throw (better_exception)
 {
     if (depth > _last_depth)
@@ -886,7 +900,7 @@ ArrayHandle::write (unsigned depth,
 	ArrayHandle newh (_arr, new_branch, depth, idx);
 	_arrays.insert (make_pair (idx, newh));
 
-	return newh.write (depth, idx, off, val);
+	return _arrays[idx].write(idx, off, val, depth);
     }
 
     _arr->write (idx, off, _branch, val);
@@ -903,8 +917,9 @@ ArrayHandle::write (unsigned depth,
 /// that array branch. a new ArrayHandle is produced if this is a deeper
 /// conditional depth.
 ArrayHandle&
-ArrayHandle::read (unsigned depth, index_t i,
-		   ByteBuffer & out)
+ArrayHandle::read (index_t i,
+		   ByteBuffer & out,
+		   unsigned depth)
     throw (better_exception)
 {
     if (depth > _last_depth)
@@ -917,7 +932,9 @@ ArrayHandle::read (unsigned depth, index_t i,
 	ArrayHandle newh (_arr, new_branch, depth, idx);
 	_arrays.insert (make_pair (idx, newh));
 	// pass on the read to the new guy
-	return newh.read (depth, i, out);
+	// use the one stored in _arrays, or the reference to self that he
+	// returns will be a temporary.
+	return _arrays[idx].read (i, out, depth);
     }
 
     out = _arr->read (i, _branch);
