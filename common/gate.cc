@@ -340,9 +340,12 @@ ostream& operator<< (ostream & out, const gate_t & g) {
     case gate_t::Lit:
 	out << "Lit" << endl;
 	break;
+    case gate_t::InitDynArray:
+	out << "InitDynArray" << endl;
+	break;
 
     default:
-	out << "something else" << endl;
+	out << "Unknown op " << g.op.kind << endl;
     }
 
     out  << "inputs: ";

@@ -113,7 +113,7 @@ private:
     private:
 
 	// used by duplicate()
-	ArrayT (ArrayT& b, unsigned branch);
+	ArrayT (const ArrayT& b, unsigned branch);
 	
 
 
@@ -155,13 +155,13 @@ private:
 	
     private:
 	// used by duplicate()
-	ArrayA (ArrayA& b, // the source ArrayA
+	ArrayA (const ArrayA& b, // the source ArrayA
 		unsigned branch); // this is the b-th branch (for naming
 	                          // purposes)
 
 	std::string _name;
 	
-	FlatIO _io;
+	mutable FlatIO _io;
 
 	// again these are set up to point into the owner Array object
 	const size_t *N, *_elem_size;
@@ -237,12 +237,18 @@ private:
 public:
     static Log::logger_t _logger;
     
-    DECL_STATIC_INIT( _logger = Log::makeLogger ("array"); );
+    DECL_STATIC_INIT( Array::_logger = Log::makeLogger (
+			  "array", boost::none, Log::DEBUG); );
     
 };
 
 
 DECL_STATIC_INIT_INSTANCE (Array);
+
+
+
+
+
 
 
 
@@ -282,12 +288,12 @@ public:
 
     /// get a reference to an array
     /// @param num the array descriptor, from newArray()
-    static ArrayHandle & getArray (des_t num);
+    static ArrayHandle getArray (des_t num);
 
 
     /// do a select operation, and return the handle of the result.
     /// @param sel_first if true select the first array, if false the second one.
-    static ArrayHandle& select (ArrayHandle& a,
+    static ArrayHandle select (ArrayHandle& a,
 				ArrayHandle& b,
 				bool sel_first,
 				unsigned depth);
@@ -306,16 +312,17 @@ public:
     /// @param idx the target index
     /// @param off the offset in bytes within that index, where we place the new
     /// value
-    ArrayHandle & write (index_t idx, size_t off,
-			 const ByteBuffer& val,
-			 unsigned depth)
+    ArrayHandle
+    write (index_t idx, size_t off,
+	   const ByteBuffer& val,
+	   unsigned depth)
 	throw (better_exception);
 
     /// Read the value from an array index.
     /// Encapsulates all the re-fetching and permuting, etc.
     /// @param idx the index
     /// @return new ByteBuffer with the value
-    ArrayHandle&
+    ArrayHandle
     read (index_t i, ByteBuffer & out, unsigned depth)
 	throw (better_exception);
     

@@ -47,40 +47,53 @@ LDLIBS	    += -lssl -lcrypto
 CPPFLAGS    += -DHAVE_OPENSSL
 endif
 
+LIB = sfdl-card
 
-TARGETS=runtime enc-circuit
+LIBFILE = lib$(LIB).$(LIBEXT)
+EXES = runtime enc-circuit
+
+TARGETS=$(LIBFILE) $(EXES)
 
 all: subdirs build
 
+lib$(LIB).so: $(LIBOBJS)
+	$(CXXLINK)
+lib$(LIB).a: $(LIBOBJS)
+	ar -ru $@ $^
+
+
+-l$(LIB): $(LIBFILE)
 
 
 build: $(TARGETS)
 
 install: subdirs build
-#	strip $(TARGETS)
-	$(INSTALL) $(TARGETS) $(DESTDIR)
-
-LIBOBJS=$(LIBSRCS:.cc=.o)
+#	strip $(EXES)
+	$(INSTALL) $(LIBFILE)	$(LEEDS_LIB)
+	$(INSTALL) $(EXES)	$(LEEDS_BIN)
 
 
 # external libraries. they get added into LDLIBS in common.make
-LIBDIRS		+= $(LEEDS_LIB) ../common
+LIBDIRS		+= $(LEEDS_LIB) . ../common
 LDLIBFILES	+= -lcard -lsfdl-common -lcommon -lcard-stream
-
 
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
 
+$(EXES) : LDLIBFILES += -lsfdl-card
+$(EXES): -lsfdl-card
+
+
 # the commands and all for run-circuit and enc-circuit are identical!
 #CCT_FLAGS=-I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
-CCT_DEPS=$(LIBOBJS) $(LDLIBFILES)
+CCT_DEPS=$(LDLIBFILES)
 
 run-circuit.o : CPPFLAGS += $(CCT_FLAGS)
 runtime: run-circuit.o $(CCT_DEPS)
 	$(CXXLINK)
 
 enc-circuit.o : CPPFLAGS += $(CCT_FLAGS)
-enc-circuit: enc-circuit.o $(LDLIBFILES) #$(CCT_DEPS)
+enc-circuit: enc-circuit.o $(CCT_DEPS)
 	$(CXXLINK)
 
 

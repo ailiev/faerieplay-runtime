@@ -269,8 +269,26 @@ void CircuitEval::do_gate (const gate_t& g)
 	    input_vals[i] = get_gate_val (g.inputs[i+1]);
 	}
 
-	// it is really a selector!
-	res_bytes = selector ? input_vals[0] : input_vals[1];
+	if (g.typ.kind == gate_t::Array)
+	{
+	    ArrayHandle::des_t descs [] = { bb2basic<unsigned> (input_vals[0]),
+					    bb2basic<unsigned> (input_vals[1]) };
+	    ArrayHandle arrs[] = { ArrayHandle::getArray (descs[0]),
+				   ArrayHandle::getArray (descs[1]) };
+
+	    ArrayHandle result = ArrayHandle::select (
+		arrs[0], arrs[1],
+		selector,
+		g.depth);
+
+	    res_bytes = basic2bb (result.getDescriptor());
+	    
+	}
+	else if (g.typ.kind == gate_t::Scalar)
+	{
+	    // it is really a selector!
+	    res_bytes = selector ? input_vals[0] : input_vals[1];
+	}
     }	
     break;
 
@@ -429,7 +447,6 @@ int CircuitEval::get_int_val (int gate_num)
     ByteBuffer buf = get_gate_val (gate_num);
 
     assert (buf.len() == sizeof(answer));
-    
     memcpy (&answer, buf.data(), sizeof(answer));
 
     LOG (Log::DUMP, logger, "get_int_val (" << gate_num << ") ->"
@@ -458,12 +475,10 @@ ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
     assert (arr_ptr.len() == sizeof(desc));
     memcpy (&desc, arr_ptr.data(), sizeof(desc));
 
-    ArrayHandle & arr = ArrayHandle::getArray (desc);
+    ArrayHandle arr = ArrayHandle::getArray (desc);
 
-    ArrayHandle& arr2 = arr.read (idx, o_val, depth);
-    return ByteBuffer (&arr2.getDescriptor(),
-		       sizeof (arr2.getDescriptor()),
-		       ByteBuffer::deepcopy());
+    ArrayHandle arr2 = arr.read (idx, o_val, depth);
+    return basic2bb (arr2.getDescriptor());
 }
 
 
@@ -485,12 +500,10 @@ ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
     assert (arr_ptr_buf.len() == sizeof(desc));
     memcpy (&desc, arr_ptr_buf.data(), sizeof(desc));
 
-    ArrayHandle & arr = ArrayHandle::getArray (desc);
-    ArrayHandle & arr2 = arr.write (idx, off, new_val, this_depth);
+    ArrayHandle arr = ArrayHandle::getArray (desc);
+    ArrayHandle arr2 = arr.write (idx, off, new_val, this_depth);
 
-    return ByteBuffer (&arr2.getDescriptor(),
-		       sizeof (arr2.getDescriptor()),
-		       ByteBuffer::deepcopy());
+    return basic2bb (arr2.getDescriptor());
 }
 
 
