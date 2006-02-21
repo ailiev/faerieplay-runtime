@@ -326,16 +326,17 @@ void Array::append_new_working_item (index_t idx, index_t branch)
 	to_append = _Ts[branch]->find_fetch_idx (rand_idx, idx);
     }
 
-    // grab the object at to_append from this T's associated A
-    ByteBuffer obj;
-    {
-	ArrayA &  arr = * _Ts[branch]->getA();
-	arr._io.read (*to_append, obj);
-    }
 
-    // append it to all our Ts
+    ByteBuffer obj;
+    // append the corresponding item to each T
     FOREACH (T, _Ts) {
-	if (*T) (*T)->appendItem (*to_append, obj);
+	if (*T)
+	{
+	    ArrayA &  arr = * (*T)->getA();
+	    arr._io.read (*to_append, obj);
+	    
+	    (*T)->appendItem (*to_append, obj);
+	}
     }
 	
     _num_retrievals++;

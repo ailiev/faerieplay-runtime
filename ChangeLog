@@ -1,3 +1,10 @@
+2006-02-21  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
+
+	* array.cc: changed the append_new_working_item() function to
+	append the correct object for each T, ie. taken from that T's A.
+	Seems to have fixed the problem with incorrect execution (on
+	array-v1.sfdl).
+
 2006-02-16  Alex Iliev  <sasho@zele.kiewit.dartmouth.edu>
 
 	* processor.cc: for now, just has an instance of static
