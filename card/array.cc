@@ -46,7 +46,7 @@ using boost::none;
 // options to use a watered down algorithm, if the full and proper one is
 // failing.
 // #define NO_REFETCHES
-#define NO_ENCRYPT
+// #define NO_ENCRYPT
 
 // how to examine the working area indices files on the host:
 // for f in *; do echo $f; od -t d4 -A n $f; done

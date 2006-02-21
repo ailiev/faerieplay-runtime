@@ -249,7 +249,7 @@ public:
     static Log::logger_t _logger;
     
     DECL_STATIC_INIT( Array::_logger = Log::makeLogger (
-			  "array", boost::none, Log::DUMP); );
+			  "array", boost::none, boost::none); );
     
 };
 

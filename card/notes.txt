@@ -27,4 +27,12 @@ just one I/O per stream for the most, time is down to 48 seconds.
 
 Mon Feb 20 17:31:10 2006
 
-Debugging array-v1.sfdl evaluation: have a discrepancy at ReadArray gates 1361 and 1368, on idx 24 - reads 0, should read 24. The idx is correct, so just the read screws up.
+Debugging array-v1.sfdl evaluation: have a discrepancy at ReadArray gates 1361
+and 1368, on idx 24 - reads 0, should read 24. The idx is correct, so just the
+read screws up.
+
+Tue Feb 21 15:46:48 2006
+
+Ran array-v1.sfdl (N=64) successfully on the card. Took 149 seconds, with stream
+proc cache set to 4K. Have a lot of tightening to do on the array branching
+code, and literal values in the circuit.

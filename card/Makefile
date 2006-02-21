@@ -80,7 +80,7 @@ LDLIBFILES	+= -lcard -lsfdl-common -lcommon -lcard-stream
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
 
-$(EXES) : LDLIBFILES += -lsfdl-card
+$(EXES) : LDLIBFILES := -lsfdl-card $(LDLIBFILES)
 $(EXES): -lsfdl-card
 
 
