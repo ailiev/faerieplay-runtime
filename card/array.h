@@ -61,7 +61,9 @@ public:
     index_t newBranch (index_t source_branch);
 
     /// do a select operation, and return the branch index of the result.
-    /// @param sel_first if true select the first branch, if false the second one.
+    /// 
+    /// @param sel_first if true select the first branch, if false the second
+    /// one.
     index_t select (index_t a, index_t b, bool sel_first);
     
     /// Write a value non-hidden, probably during initialization
@@ -72,65 +74,7 @@ public:
     void repermute ();
 
     
-
-    
 private:
-
-
-    class ArrayT
-    {
-    public:
-	// used when creating the first T for an unbranched array.
-	ArrayT (const std::string& name, /// the array name
-		size_t max_retrievals,
-		size_t elem_size,
-		const size_t * p_num_retrievals,
-		CryptoProviderFactory * prov_fact);
-
-	/// @return the index to fetch into T. none if rand_idx is already in
-	/// this T.
-	boost::optional<index_t>
-	find_fetch_idx (index_t rand_idx, index_t target_idx);
-
-	/// Read (and maybe write) all the elements in this T, returning the
-	/// current value of target_index
-	/// PRE: the target_index must be in this T
-	ByteBuffer do_dummy_accesses (
-	    index_t target_index,
-	    const boost::optional <std::pair<size_t, ByteBuffer> > & new_val);
-
-	void appendItem (index_t idx, const ByteBuffer& item);
-
-	// called when a new branch is to be created.
-	// new_branch is just provided to enable useful naming of the container.
-	boost::shared_ptr<ArrayT> duplicate (index_t new_branch);
-
-	class dummy_fetches_stream_prog;
-	friend class dummy_fetches_stream_prog;
-	
-	friend class Array;
-	
-    private:
-
-	// used by duplicate()
-	ArrayT (const ArrayT& b, unsigned branch);
-	
-
-
-	std::string _name;
-	index_t _branch;	// our branch number
-
-	mutable FlatIO _idxs, _items;
-
-	/// how many retrievals already done this session?
-	/// make this point into the owner Array's _num_retrievals, who will
-	/// then be responsible for updating it.
-	const size_t * _num_retrievals;
-
-	CryptoProviderFactory * _prov_fact;
-    };
-
-    
 
     class ArrayA
     {
@@ -159,7 +103,7 @@ private:
 		unsigned branch); // this is the b-th branch (for naming
 	                          // purposes)
 
-	std::string _name;
+	std::string _name;	// the array name
 	
 	mutable FlatIO _io;
 
@@ -167,7 +111,83 @@ private:
 	const size_t *N, *_elem_size;
 
 	CryptoProviderFactory * _prov_fact;
+
+	// use this to generate unique names
+	static unsigned _counter;
     };
+
+
+    
+    class ArrayT
+    {
+    public:
+	/// used when creating the first T for an unbranched array.
+	ArrayT (const std::string& name, /// the array name
+		size_t max_retrievals,
+		size_t elem_size,
+		const size_t * p_num_retrievals,
+		const boost::shared_ptr<ArrayA>& A,
+		CryptoProviderFactory * prov_fact);
+
+	/// @return the index to fetch into T. none if rand_idx is already in
+	/// this T.
+	boost::optional<index_t>
+	find_fetch_idx (index_t rand_idx, index_t target_idx);
+
+	/// Read (and maybe write) all the elements in this T, returning the
+	/// current value of target_index
+	/// PRE: the target_index must be in this T
+	ByteBuffer do_dummy_accesses (
+	    index_t target_index,
+	    const boost::optional <std::pair<size_t, ByteBuffer> > & new_val);
+
+	void appendItem (index_t idx, const ByteBuffer& item);
+
+	// called when a new branch is to be created.
+	// new_branch is just provided to enable useful naming of the container.
+	boost::shared_ptr<ArrayT> duplicate (index_t new_branch);
+
+	boost::shared_ptr<ArrayA> & getA ()
+	    { return _A; }
+
+	/// duplicate our A so it is unique.
+	/// \pre our #_A is not unique (or there would be no need to duplicate
+	/// it).
+	void duplicateA ();
+
+	bool hasUniqueA()
+	    { return _A.unique(); }
+
+	class dummy_fetches_stream_prog;
+	friend class dummy_fetches_stream_prog;
+	
+	friend class Array;
+	
+	
+    private:
+
+	// used by duplicate()
+	ArrayT (const ArrayT& b, unsigned branch);
+	
+
+
+	std::string _name;
+	index_t _branch;	// our branch number
+
+	boost::shared_ptr<ArrayA> _A; // the A we're working with
+	
+	mutable FlatIO _idxs, _items;
+
+	/// how many retrievals already done this session?
+	/// make this point into the owner Array's _num_retrievals, who will
+	/// then be responsible for updating it.
+	const size_t * _num_retrievals;
+
+	CryptoProviderFactory * _prov_fact;
+
+    };
+
+    
 
 
     // the selection routines
@@ -184,11 +204,6 @@ private:
     static void
     merge (const ArrayT& t, ArrayA& a);
 	
-
-    bool have_mult_As()
-	{
-	    return _As.size() > 1;
-	}
 
     void repermute_As(const boost::shared_ptr<TwoWayPermutation>& old_p,
 		      const boost::shared_ptr<TwoWayPermutation>& new_p);
@@ -223,22 +238,18 @@ private:
     boost::shared_ptr<TwoWayPermutation>   _p;
 
     std::vector<boost::shared_ptr<ArrayT> > _Ts;
-    std::vector<boost::shared_ptr<ArrayA> > _As;
+//    std::vector<boost::shared_ptr<ArrayA> > _As;
     
     size_t _num_branches;
     
     size_t _max_retrievals, _num_retrievals;
-
-    // branch indices which have duplicated T's but not A's. The A's need to be
-    // duplicated at the next repermute
-    std::vector<std::pair<index_t,index_t> > _As_to_duplicate;
 
 
 public:
     static Log::logger_t _logger;
     
     DECL_STATIC_INIT( Array::_logger = Log::makeLogger (
-			  "array", boost::none, Log::DEBUG); );
+			  "array", boost::none, Log::DUMP); );
     
 };
 
@@ -288,15 +299,15 @@ public:
 
     /// get a reference to an array
     /// @param num the array descriptor, from newArray()
-    static ArrayHandle getArray (des_t num);
+    static ArrayHandle & getArray (des_t num);
 
 
     /// do a select operation, and return the handle of the result.
     /// @param sel_first if true select the first array, if false the second one.
-    static ArrayHandle select (ArrayHandle& a,
-				ArrayHandle& b,
-				bool sel_first,
-				unsigned depth);
+    static ArrayHandle & select (ArrayHandle& a,
+				 ArrayHandle& b,
+				 bool sel_first,
+				 unsigned depth);
 
     /// return a reference to this ArrayHandle's descriptor
     const des_t & getDescriptor() const
@@ -312,7 +323,7 @@ public:
     /// @param idx the target index
     /// @param off the offset in bytes within that index, where we place the new
     /// value
-    ArrayHandle
+    ArrayHandle &
     write (index_t idx, size_t off,
 	   const ByteBuffer& val,
 	   unsigned depth)
@@ -322,7 +333,7 @@ public:
     /// Encapsulates all the re-fetching and permuting, etc.
     /// @param idx the index
     /// @return new ByteBuffer with the value
-    ArrayHandle
+    ArrayHandle &
     read (index_t i, ByteBuffer & out, unsigned depth)
 	throw (better_exception);
     
@@ -344,11 +355,14 @@ private:
 	: _arr		(arr),
 	  _branch	(branch),
 	  _last_depth	(depth),
-	  _desc		(desc)
+	  _desc		(desc),
+	  _has_branched	(false)
 	{}
 
     static des_t insert_arr (const boost::shared_ptr<Array>& arr,
 			     unsigned depth);
+
+    des_t make_new_branch (unsigned depth);
 
     boost::shared_ptr<Array> _arr;
     
@@ -357,6 +371,8 @@ private:
     unsigned _last_depth;
 
     des_t _desc;
+
+    bool _has_branched;
 
     //
     // static

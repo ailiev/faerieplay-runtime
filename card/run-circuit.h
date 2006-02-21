@@ -69,7 +69,7 @@ public:
     DECL_STATIC_INIT (
 	logger = Log::makeLogger ("run-circuit");
 	gate_logger = Log::makeLogger ("gate-logger",
-				       Just (std::string("run-circuit-gates.log")));
+				       std::string("run-circuit-gates.log"));
 	);
 };
 

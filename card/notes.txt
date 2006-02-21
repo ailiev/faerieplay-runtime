@@ -22,3 +22,9 @@ compiled with -O2 run took 51 secs
 
 With rather large batching - 512 or 1024 ops at a time, which means
 just one I/O per stream for the most, time is down to 48 seconds.
+
+
+
+Mon Feb 20 17:31:10 2006
+
+Debugging array-v1.sfdl evaluation: have a discrepancy at ReadArray gates 1361 and 1368, on idx 24 - reads 0, should read 24. The idx is correct, so just the read screws up.
