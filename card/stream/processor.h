@@ -60,7 +60,7 @@ sum_io_elem_size (const boost::array<FlatIO*, N>& ios)
     FOREACH (io, ios) {
 	if (*io != 0)
 	{
-	    z += (*io)->getElemSize();
+	    z += (*io)->getFilteredElemSize();
 	}
     }
     return z;
@@ -239,7 +239,9 @@ struct stream_processor {
 		     idx_batch_pair);
 
 
-    static const size_t CACHESIZE = 4*(1<<10); // 4K bytes cache memory
+    // FIXME: the array code failed (with an XDR encoding error on the host)
+    // when using 4K cache, and 4K-element array. Reducing cache to 1K works.
+    static const size_t CACHESIZE = 1*(1<<10); // 1K bytes cache memory
 
 
     static void process (ItemProc & itemproc,
@@ -248,6 +250,8 @@ struct stream_processor {
 			 io_t & out)
 	{
 	    // how many elements to cache into an I/O operation?
+	    // NOTE: sum_io_elem_size uses the filtered element size to account
+	    // for a larger filtered (eg. encrypted) object size.
 	    size_t C = CACHESIZE /
 		std::max (sum_io_elem_size (make_array (in)),
 			  sum_io_elem_size (make_array (out)));

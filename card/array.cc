@@ -46,7 +46,7 @@ using boost::none;
 // options to use a watered down algorithm, if the full and proper one is
 // failing.
 // #define NO_REFETCHES
-// #define NO_ENCRYPT
+#define NO_ENCRYPT
 
 // how to examine the working area indices files on the host:
 // for f in *; do echo $f; od -t d4 -A n $f; done
@@ -127,10 +127,19 @@ Array::Array (const string& name,
 
 
 /// write a value directly to branch 0, without any permutation etc.
-void Array::write_clear (index_t idx, const ByteBuffer& val)
+void Array::write_clear (index_t idx, size_t off, const ByteBuffer& val)
     throw (host_exception, comm_exception)
 {
-    _Ts[0]->getA()->_io.write (idx, val);
+    ByteBuffer current;
+
+    _Ts[0]->getA()->_io.read (idx, current);
+    
+    assert (val.len() <= current.len() - off);
+    
+    // splice in the new value
+    memcpy (current.data() + off, val.data(), val.len());
+
+    _Ts[0]->getA()->_io.write (idx, current);
 }
 
 
@@ -176,8 +185,8 @@ ByteBuffer Array::read (index_t idx, index_t branch)
 
 
 void Array::write (index_t idx, size_t off,
-		   index_t branch,
-		   const ByteBuffer& val)
+		   const ByteBuffer& val,
+		   index_t branch)
     throw (better_exception)
 {
     
@@ -617,11 +626,14 @@ public:
 		_the_item = ByteBuffer (item, ByteBuffer::deepcopy());
 
 		if (_new_val) {
-		    // all sizes need to be the same! caller should ensure this
-		    assert (_new_val->second.len() == _elem_size);
-		
-		    ByteBuffer towrite = _new_val->second;
-		    // FIXME: ignoring the offset (new_val->first) for now
+		    // NOTE: if the new value is smaller than the current one,
+		    // it will be spliced in at the specified offset, and the
+		    // rest of the current data will remain.
+		    
+		    // splice in the new value at the given offset
+		    ByteBuffer towrite = objs[ITEM];
+		    bbcopy (towrite, _new_val->second, _new_val->first);
+
 		    o_objs[ITEM] = towrite;
 		}
 		else {
@@ -932,7 +944,7 @@ ArrayHandle::write (index_t idx, size_t off,
 	return _arrays[desc].write(idx, off, val, depth);
     }
 
-    _arr->write (idx, off, _branch, val);
+    _arr->write (idx, off, val, _branch);
     return *this;
 }
 

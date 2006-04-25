@@ -29,6 +29,8 @@
 
 
 using namespace std;
+using namespace pir;
+
 using boost::shared_ptr;
 
 

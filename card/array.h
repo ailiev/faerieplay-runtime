@@ -45,8 +45,8 @@ public:
     /// @param off the offset in bytes within that index, where we place the new
     /// value
     void write (index_t idx, size_t off,
-		index_t branch,
-                const ByteBuffer& val)
+                const ByteBuffer& val,
+		index_t branch = 0)
         throw (better_exception);
 
     /// Read the value from an array index.
@@ -54,7 +54,7 @@ public:
     /// @param idx the index
     /// @return new ByteBuffer with the value
     ByteBuffer read (index_t i,
-		     index_t branch)
+		     index_t branch = 0)
 	throw (better_exception);
 
     // make a new branch and return its index
@@ -67,7 +67,7 @@ public:
     index_t select (index_t a, index_t b, bool sel_first);
     
     /// Write a value non-hidden, probably during initialization
-    void write_clear (index_t i, const ByteBuffer& val)
+    void write_clear (index_t i, size_t off, const ByteBuffer& val)
  	throw (host_exception, comm_exception);
     
     /// re-permute the objects under a new random permutation
@@ -342,7 +342,7 @@ public:
     void write_clear (index_t i, const ByteBuffer& val)
 	throw (host_exception, comm_exception)
 	{
-	    _arr->write_clear (i, val);
+	    _arr->write_clear (i, 0, val);
 	}
 
 private:

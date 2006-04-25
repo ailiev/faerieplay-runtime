@@ -1,6 +1,8 @@
 include ../../header.make
 
-include $(PIR)/common.make
+
+include $(PIR)/utils.make
+include $(PIR)/header.make
 
 
 LIBSRCS = processor.cc

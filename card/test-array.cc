@@ -29,12 +29,23 @@
 #include "pir/card/configs.h"
 
 
+using namespace pir;
+
+
 int main (int argc, char *argv[])
 {
     // create an array, fill it in with provided data from a text file, then run
     // reads/updates from another text file
 
     using namespace std;
+    
+    if (argc > 1 && std::string(argv[1]) == "--help") {
+	std::cout
+	    << "Reads a series of commands from file \"array-test-cmds.txt\",\n"
+	    "and produces a log of their execution on stdout" << std::endl;
+	exit(0);
+    }
+    
     
     init_default_configs ();
     g_configs.cryptprov = configs::CryptAny;
