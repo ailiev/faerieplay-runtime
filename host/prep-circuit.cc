@@ -11,15 +11,24 @@
 #include <pir/common/utils.h>
 #include <pir/common/consts.h>
 
+#include <pir/card/configs.h>
+#include <pir/card/io_flat.h>
+
 #include <common/consts-sfdl.h>
 #include <common/gate.h>
 
 #include <common/misc.h>
 
-//#include <pir/common/comm_types.h>
+#include <card/array.h>
 
 
 using namespace std;
+
+using pir::Array;
+using pir::ArrayHandle;
+
+
+auto_ptr<CryptoProviderFactory> g_provfact;
 
 
 int prepare_gates_container (istream & gates_in,
@@ -28,7 +37,7 @@ int prepare_gates_container (istream & gates_in,
 
 
 void usage (char *argv[]) {
-    cerr << "Usage: " << argv[0] << " <circuit file> <circuit name>" << endl
+    cerr << "Usage: " << argv[0] << " <circuit file> -n <circuit name>" << endl
 	 << "\t[-d <output directory>] default=" << STOREROOT << endl
 	 << endl
 	 << "Produces files:" << endl
@@ -47,6 +56,8 @@ int main (int argc, char *argv[]) {
 
     string store_root = STOREROOT;
     
+    ifstream gates_in;
+    
     // shut up clog for now
     /*
     ofstream out("/dev/null");
@@ -54,42 +65,79 @@ int main (int argc, char *argv[]) {
 	clog.rdbuf(out.rdbuf());
     */
     
+    //
+    // here we just scan for the store root directory
+    //
     int opt;
-    while ((opt = getopt(argc, argv, "d:")) != EOF) {
+    opterr = 0;			// shut up error messages from getopt
+    while ((opt = getopt(argc, argv, "d:h")) != EOF) {
 	switch (opt) {
 
-	case 'd':		//directory for keys etc
+	case 'd':		// directory for keys etc
 	    store_root = optarg;
 	    break;
 
-	default:
-	    usage(argv);
+	case 'h':		// help
+	    usage (argv);
+	    configs_usage (cerr, argv[0]);
 	    exit (EXIT_SUCCESS);
+
+	default:
+	    clog << "Got opt " << char(opt)
+		 << ", optarg=" << (optarg ? optarg : "null")
+		 << ", optind=" << optind << endl;
+	    break;
+// 	    usage(argv);
+// 	    exit (EXIT_SUCCESS);
 	}
     }
 
-    ifstream gates_in;
-    string cct_name;
-    
-    // need two more params
-    if (optind + 1 >= argc) {
-	usage(argv);
-	exit (EXIT_SUCCESS);
-    }
 
+    clog << "optind = " << optind
+	 << ", using circuit file " << argv[optind] << endl;
+    
     gates_in.open  (argv[optind]);
-    cct_name = argv[optind+1];
+
 
     if (!gates_in) {
 	cerr << "Failed to open circuit file " << argv[optind] << endl;
 	exit (EXIT_FAILURE);
     }
     
+
+    // reset the getopt loop
+    optind = 0;
+
+
+    init_default_configs ();
+    if ( do_configs (argc, argv) != 0 ) {
+	cerr << "Crytpo option parsing failed" << endl;
+	usage (argv);
+	exit (EXIT_SUCCESS);
+    }
+
+    try
+    {
+	g_provfact = init_crypt (g_configs);
+    }
+    catch (const crypto_exception& ex)
+    {
+	cerr << "Error making crypto providers: " << ex.what() << endl;
+	exit (EXIT_FAILURE);
+    }
+
+
+    // need one more param, the circuit file name
+    if (optind >= argc) {
+	usage(argv);
+	exit (EXIT_SUCCESS);
+    }
+
     
     init_objio (store_root);
     
     try {
-	num_gates = prepare_gates_container (gates_in, cct_name);
+	num_gates = prepare_gates_container (gates_in, g_configs.cct_name);
     }
     catch (exception & ex) {
 	cerr << "Exception! " << ex.what() << endl;
@@ -99,7 +147,7 @@ int main (int argc, char *argv[]) {
 }
 
 
-const int CONTAINER_OBJ_SIZE = 128;
+const size_t CONTAINER_OBJ_SIZE = 128;
 
 
 int prepare_gates_container (istream & gates_in,
@@ -108,10 +156,10 @@ int prepare_gates_container (istream & gates_in,
 {
 
     string line;
-    int gate_num = 0;
-    int max_gate = 0;
+    unsigned gate_num = 0;
+    unsigned max_gate = 0;
     ostringstream gate;
-    vector< pair<int,string> > gates;
+    vector< pair<index_t,string> > gates;
 
     ByteBuffer zeros (CONTAINER_OBJ_SIZE);
     zeros.set (0);
@@ -149,34 +197,33 @@ int prepare_gates_container (istream & gates_in,
 
 	clog << "gate done" << endl;
 
-	gates.push_back ( pair<int,string> (gate_num, gate.str()) );
+	gates.push_back ( make_pair (gate_num, gate.str()) );
 	    
 	gate.str("");
     }
 	
     clog << "Done reading circuit" << endl;
     
-    init_obj_container (cct_cont,
-			gates.size(),
-			CONTAINER_OBJ_SIZE);
-    init_obj_container (gates_cont,
-			max_gate + 1,
-			CONTAINER_OBJ_SIZE);
-    init_obj_container (values_cont,
-			max_gate + 1,
-			CONTAINER_OBJ_SIZE);
+    FlatIO
+	io_cct	    (cct_cont,
+		     Just (make_pair (gates.size(), CONTAINER_OBJ_SIZE))),
+	io_gates    (gates_cont,
+		     Just (make_pair (max_gate+1, CONTAINER_OBJ_SIZE))),
+	io_values   (values_cont,
+		     Just (make_pair (max_gate+1, CONTAINER_OBJ_SIZE)));
     
     clog << "cct_cont size=" << gates.size() <<
 	"; gates_cont size=" << max_gate + 1 << endl;
 
     
-    int i = 0;
+    index_t i = 0;
     FOREACH (g, gates) {
 	gate_t gate = unserialize_gate (g->second);
 
 	if (gate.op.kind == gate_t::Input) {
 	    // get the input
-	    switch (gate.typ.kind) {
+	    switch (gate.typ.kind)
+	    {
 	    case gate_t::Scalar:
 	    {
 		int in;
@@ -185,57 +232,67 @@ int prepare_gates_container (istream & gates_in,
 		     << " for gate " << gate.num << ": " << flush;
 		cin >> in;
 		
-		ByteBuffer val (&in, sizeof(in), ByteBuffer::SHALLOW);
+		ByteBuffer val = optBasic2bb<int> (in);
 		
 		clog << "writing " << sizeof(in) << " byte input value" << endl;
-		write_obj (val, values_cont, gate.num);
+		io_values.write (gate.num, val);
 	    }
 	    break;
 
 	    case gate_t::Array:
 	    {
-		int length	= gate.typ.params[0],
+		unsigned length	= gate.typ.params[0],
 		    elem_size	= gate.typ.params[1];
 
-		char arr_name = 'A';
-		arr_ptr_t arr_ptr = make_array_pointer (arr_name, 0);
-		string arr_cont_name = make_array_container_name (arr_ptr);
+		// NOTE: use the gate comment for the array's name, the runtime
+		// has to do the same.
+		string arr_cont_name = gate.comment;
 
 		string in_str;
-		vector<int> ins (elem_size);
+		vector<int> ins;
 		
-		// create the clear-text array container
-		init_obj_container ( arr_cont_name,
-				     length,
-				     elem_size * 4 );
+		// create the Array object to use to write
+		Array arr (arr_cont_name,
+			   Just (make_pair (length, elem_size)),
+			   g_provfact.get());
+
+		cerr << "Input array \"" <<  gate.comment << "\", elem size " << elem_size
+		     << endl;
 
 		// and prompt for all the values and write them in there
-		for (int l_i = 0; l_i < length; l_i++) {
+		for (int l_i = 0; l_i < length; l_i++)
+		{
 
-		    for (int e_i = 0; e_i < elem_size; e_i++) {
+		    // ASSUME: the array elements are all 32-bit integers. If
+		    // they're not, won't be prompting and populating the values
+		    // correctly here.
+		    for (int e_i = 0; e_i < elem_size / sizeof(int); e_i++)
+		    {
 			cerr << "Elt " << l_i << " field " << e_i << ": " << flush;
-			do {
+			do
+			{
 			    cin  >> in_str;
 			} while (in_str.size() == 0 || in_str[0] == '#');
 
-			ins[e_i] = atoi (in_str.c_str());
+			ins.push_back (atoi (in_str.c_str()));
 		    }
 
-		    ByteBuffer ins_buf (elem_size * 4);
-		    for (int i=0; i<elem_size; i++) {
-			memcpy (ins_buf.data() + (i*4), & ins[i], sizeof(ins[i]));
+		    ByteBuffer ins_buf (elem_size);
+		    for (int i=0; i < elem_size / sizeof(int); i++)
+		    {
+			memcpy (ins_buf.data() + i*sizeof(int),
+				& ins[i],
+				sizeof(ins[i]));
 		    }
 
 		    // write the array value into the array container
-		    write_obj (ins_buf, arr_cont_name,
-			       l_i);
-
+		    arr.write_clear (l_i, 0, ins_buf);
 		}
 
-		// and write the array pointer into the values table
-		write_obj (ByteBuffer (&arr_ptr, sizeof(arr_ptr), ByteBuffer::SHALLOW),
-			   values_cont,
-			   gate.num);
+		// and write a blank value of the right size into the values
+		// table, the runtime will fill in the actual value.
+                io_values.write (gate.num,
+				 ByteBuffer (sizeof(ArrayHandle::des_t)));
 		
 	    } // end case Array:
 	    break;
@@ -245,21 +302,15 @@ int prepare_gates_container (istream & gates_in,
 	} // end if (gate.op.kind == gate_t::Input)
 	else {
 	    // we should enter something into the values container
-	    write_obj (zeros,
-		       values_cont,
-		       gate.num);
+	    io_values.write (gate.num, zeros);
 	}
 	
 	// write the string form of the gate into the two containers.
 	ByteBuffer gatestring = ByteBuffer (g->second, ByteBuffer::SHALLOW);
 
-	write_obj (gatestring,
-		   gates_cont,
-		   g->first);
+	io_gates.write (g->first, gatestring);
+	io_cct.write   (i++,      gatestring);
 
-	write_obj (gatestring,
-		   cct_cont,
-		   i++);
     } // end FOREACH (g, gates)
 	
     return max_gate;
