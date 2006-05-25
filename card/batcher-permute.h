@@ -23,6 +23,7 @@
  */
 
 
+#include "batcher-network.h"
 
 #include <vector>
 
@@ -81,8 +82,8 @@ private:
     //
     // class to do a comparator in the Batcher network
     //
-    class Comparator {
-
+    class Comparator : public BatcherInfoListener
+    {
     public:
 	
 	Comparator (Shuffler & master,
@@ -95,7 +96,9 @@ private:
 	    {}
 
 	void operator () (index_t a, index_t b)
-	    throw (hostio_exception, crypto_exception);
+	    throw (better_exception);
+
+	virtual void newpass () throw (better_exception);
 
 	~Comparator ();
 

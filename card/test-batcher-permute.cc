@@ -49,6 +49,37 @@ int main (int argc, char * argv[]) {
     // test: construct a container, encrypt it, permute it, and read
     // out the values.
 
+    size_t N = 64;
+
+    bool just_help = false;
+    
+    int opt;
+    opterr = 0;			// shut up error messages from getopt
+    while ((opt = getopt(argc, argv, "N:h")) != EOF) {
+	switch (opt) {
+
+	case 'N':		// directory for keys etc
+	    N = atoi(optarg);
+	    break;
+
+	case 'h':		// help
+	    cout << "Usage: " << argv[0] << " [-N <number of integers>]" << endl;
+	    just_help = true;
+	    break;
+	    
+	default:
+	    clog << "Got opt " << char(opt)
+		 << ", optarg=" << (optarg ? optarg : "null")
+		 << ", optind=" << optind << endl;
+	    break;
+// 	    usage(argv);
+// 	    exit (EXIT_SUCCESS);
+	}
+    }
+
+    // reset option parsing and call do_configs
+    optind = 0;
+
     init_default_configs ();
     g_configs.cryptprov = configs::CryptAny;
     
@@ -57,9 +88,14 @@ int main (int argc, char * argv[]) {
 	exit (EXIT_SUCCESS);
     }
 
-    auto_ptr<CryptoProviderFactory> prov_fact = init_crypt (g_configs);
 
-    size_t N = 64;
+    if (just_help)
+    {
+	// done by now
+	exit (EXIT_SUCCESS);
+    }
+    
+    auto_ptr<CryptoProviderFactory> prov_fact = init_crypt (g_configs);
 
     shared_ptr<SymWrapper>   io_sw (new SymWrapper (prov_fact.get()));
 
@@ -67,19 +103,24 @@ int main (int argc, char * argv[]) {
     // io_ptr and pass it to IOFilterEncrypt. The shared_ptr would not be ready
     // for the operator* at that point.
     shared_ptr<FlatIO> io (new FlatIO ("permutation-test-ints",
-				       make_pair (N, sizeof(int))));
-    io->appendFilter (auto_ptr<HostIOFilter> (
-			  new IOFilterEncrypt (io.get(), io_sw)));
+				       make_pair (N, sizeof(int) + 4)));
+//     io->appendFilter (auto_ptr<HostIOFilter> (
+// 			  new IOFilterEncrypt (io.get(), io_sw)));
 
+    // write in the consecutive integers
     for (unsigned i = 0; i < N; i++) {
 	hostio_write_int (*io, i, i);
     }
     
-    shared_ptr<TwoWayPermutation> pi (
-	new LRPermutation (lgN_ceil (N), 7, prov_fact.get()) );
-    pi->randomize ();
+    shared_ptr<TwoWayPermutation> pi0
+	(new UnbalancedLRPermutation (lgN_ceil(N), lgN_ceil(N), prov_fact.get()));
+    pi0->randomize ();
+
+    shared_ptr<TwoWayPermutation> pi (new RangeAdapterPermutation (pi0, N));
 
     cout << "The permutation's mapping:" << endl;
+    write_all_images (cout, pi.get());
+    cout << "The permutation's inverse mapping:" << endl;
     write_all_preimages (cout, pi.get());
     
     Shuffler s (io, pi, N);
@@ -89,6 +130,11 @@ int main (int argc, char * argv[]) {
     cout << "And the network's result:" << endl;
     for (unsigned i = 0; i < N; i++) {
 	unsigned j = hostio_read_int (*io, i);
+	if (pi->d(i) != j)
+	{
+	    cerr << "** error at i=" << i << ": pi gives " << pi->d(i)
+		 << ", network gave " << j << endl;
+	}
 	cout << i << " -> " << j << endl;
     }
 }

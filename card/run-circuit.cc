@@ -147,7 +147,8 @@ CircuitEval::CircuitEval (const std::string& cctname,
 			  CryptoProviderFactory * fact)
     // tell the HostIO to not use a write cache (size 0)
     : _cct_io	(cctname + DIRSEP + CCT_CONT, none),
-      _vals_io	(cctname + DIRSEP + VALUES_CONT, none)
+      _vals_io	(cctname + DIRSEP + VALUES_CONT, none),
+      _prov_fact    (fact)
 {
     // NOTE: how are the keys set up? _vals_io calls initExisting() on the
     // filter, which then reads in the container keys using its #master pointer
@@ -203,7 +204,7 @@ void CircuitEval::read_gate (gate_t & o_gate,
 
 void CircuitEval::do_gate (const gate_t& g)
 {
-    int res = 12345678;
+    optional<int> res = 12345678;
     ByteBuffer res_bytes;
 
 
@@ -211,7 +212,7 @@ void CircuitEval::do_gate (const gate_t& g)
 
     case gate_t::BinOp:
     {
-	int arg_val[2];
+	optional<int> arg_val[2];
 	
 	assert (g.inputs.size() == 2);
 	for (int i=0; i < 2; i++) {
@@ -224,7 +225,7 @@ void CircuitEval::do_gate (const gate_t& g)
 	LOG (Log::DUMP, logger,
 	     "BinOp returns " << res);
 
-	res_bytes = ByteBuffer (&res, sizeof(res), ByteBuffer::SHALLOW);
+	res_bytes = optBasic2bb (res);
 
     }
     break;
@@ -232,7 +233,8 @@ void CircuitEval::do_gate (const gate_t& g)
     
     case gate_t::UnOp:
     {
-	int arg_gate, arg_val;
+	int arg_gate;
+	optional<int> arg_val;
 	
 	assert (g.inputs.size() == 1);
 	arg_gate = g.inputs[0];
@@ -240,20 +242,33 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	res = do_un_op (static_cast<gate_t::unop_t>(g.op.params[0]),
 			arg_val);
-	res_bytes = ByteBuffer (&res, sizeof(res), ByteBuffer::SHALLOW);
+
+	res_bytes = optBasic2bb (res);
 	
     }
     break;
 
     
     case gate_t::Input:
-	// already been done for us, go on
+	if (g.typ.kind == gate_t::Array)
+	{
+	    // need to load up the array
+	    string arr_cont_name = g.comment;
+
+	    ArrayHandle::des_t arr_ptr = ArrayHandle::newArray (arr_cont_name,
+								_prov_fact,
+								g.depth);
+
+	    res_bytes = optBasic2bb (Just (arr_ptr));
+	}
+
+	// nothing to do for Scalars, the value is already set up by prep-circuit
 	break;
 
     case gate_t::Lit:
 	// place the lit value into the slot
 	res = g.op.params[0];
-	res_bytes = ByteBuffer (&res, sizeof(res), ByteBuffer::SHALLOW);
+	res_bytes = optBasic2bb (res);
 
 	break;
 
@@ -261,33 +276,52 @@ void CircuitEval::do_gate (const gate_t& g)
     case gate_t::Select:
     {
 	ByteBuffer input_vals[2];
-	int selector;
+	
+	optional<int> selector;
+
+	bool sel_first;
 
 	assert (g.inputs.size() == 3);
 	selector = get_int_val (g.inputs[0]);
+	
+	// treat a Nothing selector as False
+	sel_first = ! (!selector || !*selector);
+	    
+
 	for (int i=0; i < 2; i++) {
 	    input_vals[i] = get_gate_val (g.inputs[i+1]);
 	}
 
+
 	if (g.typ.kind == gate_t::Array)
 	{
-	    ArrayHandle::des_t descs [] = { bb2basic<unsigned> (input_vals[0]),
-					    bb2basic<unsigned> (input_vals[1]) };
-	    ArrayHandle arrs[] = { ArrayHandle::getArray (descs[0]),
-				   ArrayHandle::getArray (descs[1]) };
+	    // this is a bit longer, as array selection involved reading through
+	    // both arrays to hide which one is selected. hence handled by the
+	    // Array code
+	    
+	    optional<ArrayHandle::des_t> descs [] = {
+		bb2optBasic<ArrayHandle::des_t> (input_vals[0]),
+		bb2optBasic<ArrayHandle::des_t> (input_vals[1])
+	    };
+	    
+	    assert (("Cannot select on a Nothing array handle",
+		     descs[0] && descs[1]));
+	    
+	    ArrayHandle arrs[] = { ArrayHandle::getArray (*descs[0]),
+				   ArrayHandle::getArray (*descs[1]) };
 
 	    ArrayHandle result = ArrayHandle::select (
 		arrs[0], arrs[1],
 		selector,
 		g.depth);
 
-	    res_bytes = basic2bb (result.getDescriptor());
+	    res_bytes = optBasic2bb (Just (result.getDescriptor()));
 	    
 	}
 	else if (g.typ.kind == gate_t::Scalar)
 	{
-	    // it is really a selector!
-	    res_bytes = selector ? input_vals[0] : input_vals[1];
+	    // simple!
+	    res_bytes = sel_first  ? input_vals[0] : input_vals[1];
 	}
     }	
     break;
@@ -296,7 +330,7 @@ void CircuitEval::do_gate (const gate_t& g)
     case gate_t::ReadDynArray:
     {
 	ByteBuffer arr_ptr = get_gate_val (g.inputs[0]);
-	int idx = get_int_val (g.inputs[1]);
+	optional<int> idx = get_int_val (g.inputs[1]);
 	
 	ByteBuffer val;
 	ByteBuffer arr2 = do_read_array (arr_ptr, idx, g.depth, val);
@@ -318,11 +352,11 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	ByteBuffer arr_ptr = get_gate_val (arr_gate_num);
 	// the index to write to
-	int idx = get_int_val (g.inputs[1]);
+	optional<int> idx = get_int_val (g.inputs[1]);
 
 	// and load up the rest of the inputs into vals
 	vector<ByteBuffer> vals (g.inputs.size()-2);
-	// what a PITA to call a member function!
+	// what a PITA to call a member function through STL algrithms...
 	transform (g.inputs.begin()+2,
 		   g.inputs.end(),
 		   vals.begin(),
@@ -357,19 +391,32 @@ void CircuitEval::do_gate (const gate_t& g)
 	off = g.op.params[0];
 	len = g.op.params[1];
 
+	// HACK: here we're making a ByteBuffer representing an opaque
+	// optional<> value of the right length, as manipulated by optBasic2bb()
+	// and bb2optBasic().
+
 	ByteBuffer val = get_gate_val (g.inputs[0]);
-	ByteBuffer out (len);
+	ByteBuffer out (1 + len); // one for the Nothing/Just discriminant
 
 	LOG (Log::DEBUG, logger,
 	     "Slicer (" << off << "," << len << ")" << val);
-	
-	assert (val.len() >= off + len);
-	memcpy (out.data(), val.data() + off, len);
+
+	if (!isOptBBJust (val))
+	{
+	    out.data()[0] = 0;
+	}
+	else
+	{
+	    assert (val.len() >= off + len);
+	    
+	    out.data()[0] = 1;
+	    memcpy (out.data() + 1, val.data() + 1 + off, len);
+
+	    LOG (Log::DEBUG, logger,
+		 "Slicer returns " << res_bytes);
+	}
 
 	res_bytes = out;
-	
-	LOG (Log::DEBUG, logger,
-	     "Slicer returns " << res_bytes);
     }
     break;
 
@@ -388,7 +435,7 @@ void CircuitEval::do_gate (const gate_t& g)
 							     g.depth);
 
 	
-	res_bytes = basic2bb(arr_desc);
+	res_bytes = optBasic2bb (Just (arr_desc));
     }
     break;
     
@@ -442,16 +489,15 @@ ByteBuffer CircuitEval::get_gate_val (int gate_num)
 
 
 // get the current value at this gate's output
-int CircuitEval::get_int_val (int gate_num)
+optional<int> CircuitEval::get_int_val (int gate_num)
 {
 
-    int answer;
+    optional<int> answer;
     
     ByteBuffer buf = get_gate_val (gate_num);
 
-    assert (buf.len() == sizeof(answer));
-    memcpy (&answer, buf.data(), sizeof(answer));
-
+    answer = bb2optBasic<int> (buf);
+    
     LOG (Log::DUMP, logger, "get_int_val (" << gate_num << ") ->"
 	 << answer);
 
@@ -459,6 +505,7 @@ int CircuitEval::get_int_val (int gate_num)
 }
 
 
+#if 0
 string CircuitEval::get_string_val (int gate_num)
 {
 
@@ -466,34 +513,58 @@ string CircuitEval::get_string_val (int gate_num)
 
     return string (buf.cdata(), buf.len());
 }
+#endif
 
 
 ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
-				       index_t idx,
+				       optional<int> idx,
 				       unsigned depth,
 				       ByteBuffer & o_val)
 {
-    ArrayHandle::des_t desc = bb2basic<ArrayHandle::des_t> (arr_ptr);
+    optional<ArrayHandle::des_t> desc, null;
 
-//     assert (arr_ptr.len() == sizeof(desc));
-//     memcpy (&desc, arr_ptr.data(), sizeof(desc));
+    desc = bb2optBasic<ArrayHandle::des_t> (arr_ptr);
 
-    ArrayHandle & arr = ArrayHandle::getArray (desc);
+    if (!desc)
+    {
+	LOG (Log::ERROR, logger,
+	     "CircuitEval::do_read_array: got a null array pointer!");
+	return optBasic2bb (null);
+    }
 
-    ArrayHandle & arr2 = arr.read (idx, o_val, depth);
-    return basic2bb (arr2.getDescriptor());
+    ArrayHandle & arr = ArrayHandle::getArray (*desc);
+
+    if (!idx || *idx < 0 || *idx >= arr.length())
+    {
+	// no write
+	LOG (Log::INFO, logger,
+	     "do_read_array got a null or outside-bounds index " << idx);
+	return arr_ptr;
+    }
+
+    ArrayHandle & arr2 = arr.read (*idx, o_val, depth);
+    
+    return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }
 
 
 ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
-				  size_t off,
-				  optional<size_t> len,
-				  index_t idx,
-				  const ByteBuffer& new_val,
-				  int prev_depth, int this_depth)
+					size_t off,
+					optional<size_t> len,
+					optional<int> idx,
+					const ByteBuffer& new_val,
+					int prev_depth, int this_depth)
     
 {
-    ArrayHandle::des_t desc = bb2basic<ArrayHandle::des_t> (arr_ptr_buf);;
+    optional<ArrayHandle::des_t> desc, null;
+    
+    desc = bb2optBasic<ArrayHandle::des_t> (arr_ptr_buf);;
+
+    if (!desc) {
+	LOG (Log::ERROR, logger,
+	     "CircuitEval::do_write_array: got a null array pointer!");
+	return optBasic2bb (null);
+    }
 
 //     assert (arr_ptr_buf.len() == sizeof(desc));
 //     memcpy (&desc, arr_ptr_buf.data(), sizeof(desc));
@@ -503,11 +574,37 @@ ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
 	assert (*len == new_val.len());
     }
     
-    ArrayHandle & arr = ArrayHandle::getArray (desc);
-    ArrayHandle & arr2 = arr.write (idx, off, new_val, this_depth);
+    ArrayHandle & arr = ArrayHandle::getArray (*desc);
 
-    return basic2bb (arr2.getDescriptor());
+    if (!idx || *idx < 0 || *idx >= arr.length()) {
+	// no write
+	LOG (Log::INFO, logger,
+	     "do_write_array got a null or outside-bounds index " << idx);
+	return arr_ptr_buf;
+    }
+    
+    ArrayHandle & arr2 = arr.write (*idx, off, new_val, this_depth);
+
+    return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }
+
+
+
+
+#if 0
+template<class Archive>
+void serialize(Archive & ar, optional<int> & g, const unsigned int version)
+{
+    
+    byte isJust = g;
+
+    ar & isJust;
+    
+    if (isJust) {
+	ar & *g;
+    }
+}
+#endif
 
 
 CLOSE_NS

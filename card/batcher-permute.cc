@@ -24,6 +24,7 @@
 
 #include <vector>
 #include <fstream>
+#include <algorithm>
 #include <functional>
 #include <exception>
 
@@ -55,11 +56,7 @@ static char *rcsid ="$Id$";
 
 using boost::shared_ptr;
 
-static const std::string CLEARDIR = "clear",
-    CRYPTDIR_BASE = "crypt";
-
-
-//const size_t Shuffler::TAGSIZE = 4;
+using std::vector;
 
 
 
@@ -93,8 +90,7 @@ void Shuffler::shuffle ()
     LOG (Log::PROGRESS, logger,
 	 "Start preparing DB @ " << epoch_time);
     
-    // should first encrypt all the records to produce the encrypted
-    // database, and add the destination index tags to all the records
+    // add the destination index tags to all the records
     prepare ();
 
     LOG (Log::PROGRESS, logger,
@@ -108,12 +104,9 @@ void Shuffler::shuffle ()
 	// a batch element for the comparator is actually two objects
 	// make sure the batch size divides N.
 	unsigned batchsize = std::min (_read_cache_size/2, N-1);
-	while (N % batchsize != 0)
-	{
-	    batchsize--;
-	}
+
 	Comparator comparator (*this, batchsize);
-	run_batcher (N, comparator);
+	run_batcher (N, comparator, &comparator);
     }
 
     // now need to remove the tags of the records
@@ -129,26 +122,26 @@ void Shuffler::shuffle ()
 // tag an item with its destination index, at the end of the actual data
 struct Shuffler::tagger {
 
-    tagger (boost::shared_ptr<ForwardPermutation> & p)
-	: p(p)
+    tagger (ForwardPermutation & pi)
+	: pi (pi)
 	{}
 	
     void operator() (index_t i, const ByteBuffer& in, ByteBuffer& out) const
 	{
-	    index_t dest = p->p(i);
+	    index_t dest = pi.p(i);
 
 	    out = realloc_buf (in, in.len() + TAGSIZE);
 	    memcpy ( out.data() + in.len(), &dest, TAGSIZE );
 	}
 
-    boost::shared_ptr<ForwardPermutation> & p;
+    ForwardPermutation & pi;
 };
 
 
 
 void Shuffler::prepare () throw (better_exception)
 {
-    stream_process ( tagger(_p),
+    stream_process ( tagger(*_p),
 		     zero_to_n (N),
 		     _io.get(),
 		     _io.get());
@@ -176,9 +169,11 @@ void Shuffler::remove_tags () throw (hostio_exception, crypto_exception)
 
 
 void Shuffler::Comparator::operator () (index_t a, index_t b)
-    throw (hostio_exception, crypto_exception)
+    throw (better_exception)
 {
 
+    assert (a < master.N && b < master.N);
+    
     // Now we will collect bucket-pairs to switch, and switch them in
     // bulk when we have enough
 
@@ -196,14 +191,60 @@ void Shuffler::Comparator::operator () (index_t a, index_t b)
     }
 }
 
+void Shuffler::Comparator::newpass ()
+    throw (better_exception)
+{
+    LOG (Log::DEBUG, logger,
+	 "doing " << _batch_size << " batched comparators on new pass");
+	
+    // flush the batched comparators
+    if (_batch_size > 0)
+    {
+	do_batch();
+	_batch_size = 0;
+    }
+}
+
+
+OPEN_ANON_NS
+// notice it's a fully copied parameter
+void check_for_dups (vector<index_t> V)
+{
+    std::sort (V.begin(), V.end());
+
+    vector<index_t>::iterator dup;
+
+    for ( dup = std::adjacent_find (V.begin(), V.end());
+	  dup != V.end();
+	  dup = std::adjacent_find (++dup, V.end()))
+    {
+	LOG (Log::ERROR, logger,
+	     "do_batch has index " << *dup << " more than once!");
+    }
+}
+CLOSE_NS
+
 
 void Shuffler::Comparator::do_batch ()
     throw (hostio_exception, crypto_exception)
 {
-    obj_list_t objs (_idxs_temp.size());
+    obj_list_t objs (_batch_size * 2);
 
+
+    // XXX: this needed in case do_batch is called with less-than-full
+    // _comparators, ie. before _max_batch_size comparators were batched.
+    // Hopefully this does not cause re-alocation of the vectors.
+    _comparators.resize(_batch_size);
+    _idxs_temp.resize (_batch_size * 2);
+    
     // first build a list of index_t for all the records involved
     build_idx_list (_idxs_temp, _comparators);
+
+    // there should be no duplicated in the index list, or the comparators will
+    // not be done correctly.
+//     LOG (Log::DEBUG, logger,
+// 	 "do_batch() checking for dups on batch of size " << _batch_size);
+//     check_for_dups (_idxs_temp);
 
     // now fetch and decrypt all the blobs.
     master._io->read (_idxs_temp, objs);
@@ -213,6 +254,10 @@ void Shuffler::Comparator::do_batch ()
 
     // and now write out the switched blobs
     master._io->write (_idxs_temp, objs);
+
+    // XXX: restore the caches to the expected size.
+    _comparators.resize (_max_batch_size);
+    _idxs_temp.resize (_max_batch_size*2);
 }
 
 
@@ -260,7 +305,7 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
     Shuffler::rec_list_t::iterator r1, r2;
 
     LOG (Log::DUMP, logger,
-	 "Batch list size at start is " << io_recs.size());
+	 "Batch list size at do_comparators() is " << io_recs.size());
     
     r1 = io_recs.begin(); // record 1, right at the beginning
     // record 2, next one in list
@@ -272,6 +317,8 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
 	uint32_t a, b;
 	memcpy (&a, r1->data() + r1->len() - TAGSIZE, TAGSIZE);
 	memcpy (&b, r2->data() + r2->len() - TAGSIZE, TAGSIZE);
+	
+	assert (a < master.N && b < master.N);
 	
 	if (b < a) {
 	    // do the switch
@@ -291,10 +338,6 @@ Shuffler::Comparator::do_comparators (Shuffler::rec_list_t & io_recs,
 	std::advance (r2, 2);
     }
 
-    LOG (Log::DUMP, logger,
-	 "Batch list size at end is " << io_recs.size());
-
-    
 }
 
 

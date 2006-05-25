@@ -38,7 +38,7 @@ private:
 
     /// @return the descriptor of the resulting array
     ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
-			      index_t idx,
+			      boost::optional<int> idx,
 			      unsigned depth,
 			      ByteBuffer & o_val);
 
@@ -46,12 +46,12 @@ private:
     ByteBuffer do_write_array (const ByteBuffer& arr_ptr_buf,
 			       size_t off,
 			       boost::optional<size_t> len,
-			       index_t idx,
+			       boost::optional<int> idx,
 			       const ByteBuffer& new_val,
 			       int prev_depth, int this_depth);
 
     /// get the current value at this gate's output
-    int get_int_val (int gate_num);
+    boost::optional<int> get_int_val (int gate_num);
 
     std::string get_string_val (int gate_num);
 
@@ -61,6 +61,8 @@ private:
     
     FlatIO _cct_io;
     FlatIO _vals_io;
+
+    CryptoProviderFactory * _prov_fact;
 
 public:
 
@@ -75,6 +77,10 @@ public:
 
 
 DECL_STATIC_INIT_INSTANCE(CircuitEval);
+
+
+
+
 
 
 CLOSE_NS

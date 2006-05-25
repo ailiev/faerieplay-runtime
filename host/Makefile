@@ -7,26 +7,26 @@ include $(PIR)/header.make
 PIRCARD=$(PIR)/card
 PIRHOST=$(PIR)/host
 
-SRCS=prep-circuit.cc
+SRCS=
 
 DESTDIR=$(LEEDS_BIN)
 
 # no space problem on the host usually
 #CFLAGS += -g
 
-LIBDIRS = $(PIR)/common ../common
-LDLIBFILES=-lsfdl-common -lcommon -lboost_filesystem
+LIBDIRS	    += $(LEEDS_LIB) .
+LDLIBFILES  += -lsfdl-common -lcommon -lboost_filesystem -lsfdl-card
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
 
-TARGETS=prep-circuit
+TARGETS=  #prep-circuit
 
 all: build
 
 build: $(TARGETS)
 
 install: build
-	install $(TARGETS) $(DESTDIR)
+#	install $(TARGETS) $(DESTDIR)
 
 $(TARGETS): $(OBJS) $(PIRHOST)/objio.o $(LDLIBFILES)
 	$(CXXLINK)

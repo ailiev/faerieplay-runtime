@@ -32,6 +32,22 @@
 using namespace pir;
 
 
+//
+// the array testing setup:
+//
+// \file{test-array.cc} reads commands from \file{array-test-cmds.txt} and
+// carries them out using an Array object.
+// 
+// several parameters are specified in \file{array-test-sizes.h}. They are used
+// in \file{test-array.cc}, as well as by \file{array-test-gen.sh}, which
+// generates a random sequence of read/write commands, into
+// \file{array-test-cmds.txt}.
+//
+// \file{check-array-test-run.pl} takes the output of test-array on stdin, and
+// runs the commands itself and reports any discrepancies from test-array's
+// output.
+
+
 int main (int argc, char *argv[])
 {
     // create an array, fill it in with provided data from a text file, then run

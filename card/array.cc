@@ -275,10 +275,14 @@ void Array::repermute ()
     }
 #endif // NO_REFETCHES
 	
-    // the new permutation
-    shared_ptr<TwoWayPermutation> p2 (new LRPermutation (
-					  lgN_ceil(N), 7, _prov_fact));
-    p2->randomize();
+    // the new permutation - a range-adapted LR perm.
+    shared_ptr<TwoWayPermutation> p2_
+	(new UnbalancedLRPermutation (lgN_ceil(N),
+				      lgN_ceil(N),
+				      _prov_fact));
+    p2_->randomize();
+
+    shared_ptr<TwoWayPermutation> p2 (new RangeAdapterPermutation (p2_, N));
 
     repermute_As (_p, p2);
     

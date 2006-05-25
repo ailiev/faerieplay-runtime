@@ -30,7 +30,7 @@ endif
 DESTDIR=$(LEEDS_BIN)
 
 LIBSRCS=array.cc utils.cc batcher-permute.cc batcher-network.cc 
-SRCS=run-circuit.cc enc-circuit.cc $(LIBSRCS)
+SRCS=run-circuit.cc enc-circuit.cc prep-circuit.cc $(LIBSRCS)
 
 TESTSRCS=$(wildcard test-*.cc)
 
@@ -51,11 +51,12 @@ endif
 LIB = sfdl-card
 
 LIBFILE = lib$(LIB).$(LIBEXT)
-EXES = runtime enc-circuit
+EXES = runtime enc-circuit prep-circuit
 
 TARGETS=$(LIBFILE) $(EXES)
 
 all: subdirs build
+
 
 lib$(LIB).so: $(LIBOBJS)
 	$(CXXLINK)
@@ -85,16 +86,7 @@ $(EXES) : LDLIBFILES := -lsfdl-card $(LDLIBFILES)
 $(EXES): -lsfdl-card
 
 
-# the commands and all for run-circuit and enc-circuit are identical!
-#CCT_FLAGS=-I$(4758_KERNEL_INCLUDE) -I$(SCC_INCLUDE)
-CCT_DEPS=$(LDLIBFILES)
-
-run-circuit.o : CPPFLAGS += $(CCT_FLAGS)
-runtime: run-circuit.o $(CCT_DEPS)
-	$(CXXLINK)
-
-enc-circuit.o : CPPFLAGS += $(CCT_FLAGS)
-enc-circuit: enc-circuit.o $(CCT_DEPS)
+runtime: run-circuit.o $(LDLIBFILES)
 	$(CXXLINK)
 
 

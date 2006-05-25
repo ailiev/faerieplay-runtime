@@ -9,49 +9,101 @@
 
 #include "gate.h"
 
+#include <boost/optional/optional.hpp>
+
 
 using namespace std;
+
+using boost::optional;
 
 
 gate_t::gate_t ()
     // can't have this if we just use push_back to add inputs.
 //   : inputs (2)
 {}
+
+
+
+optional<int>
+do_bin_op (gate_t::binop_t op,
+	   optional<int> x, optional<int> y)
+{
+    optional<int> null;
     
-
-int do_bin_op (gate_t::binop_t op, int x, int y) {
-
-    switch (op) {
-    case     gate_t::Plus:  return x + y;
-    case     gate_t::Minus: return x - y;
-
-	// NOTE: we need to be able to handle division by zero. producing an
-	// invalid answer is fine, hopefully a subsequent gate_t::Select will ignore it.
-	// TODO: should concoct a "bottom" value, to represent invalid
-	// computation results which should not be used in subsequent
-	// operations.
-    case     gate_t::Div:   return y != 0 ? x / y : 0;
-    case     gate_t::Mod:   return y != 0 ? x % y : 0;
-    case     gate_t::Times: return x * y;
-		
-    case     gate_t::LT:    return x < y;
-    case     gate_t::GT:    return x > y;
-    case     gate_t::Eq:    return x == y;
-    case     gate_t::LTEq:  return x <= y;
-    case     gate_t::GTEq:  return x >= y;
-    case     gate_t::NEq:   return x != y;
-    case     gate_t::SR:   return x >> y;
-    case     gate_t::SL:   return x << y;
-    default: cerr << "unknown binop " << op << endl;
+    // boolean operators need special attention, as a null paramater does not
+    // imply a null result
+    if (op == gate_t::And)
+    {
+	if	(x && *x == 0)	return 0;
+	else if (y && *y == 0)	return 0;
+	else if (x && y && *x == 1 && *y == 1) return 1;
+	else			return null;
     }
-     
+    else if (op == gate_t::Or)
+    {
+	if	(x && *x == 1)	return 1;
+	else if (y && *y == 1)	return 1;
+	else if (x && y && *x == 0 && *y == 0) return 0;
+	else			return null;
+    }
+
+
+    // for the rest, if one of the params is null, the result is null too.
+	if (!x || !y)
+    {
+	return null;
+    }
+
+    
+    switch (op) {
+	// 7 arithmetic operators, including the shifts
+	// for divide and mod, catch division by zero and return null.
+    case     gate_t::Div:   return *y != 0 ? *x / *y : null;
+    case     gate_t::Mod:   return *y != 0 ? *x % *y : null;
+
+    case     gate_t::Plus:  return *x + *y;
+    case     gate_t::Minus: return *x - *y;
+
+    case     gate_t::Times: return *x * *y;
+		
+    case     gate_t::SR:    return *x >> *y;
+    case     gate_t::SL:    return *x << *y;
+
+	// 6 comparison operators
+    case     gate_t::LT:    return *x < *y;
+    case     gate_t::GT:    return *x > *y;
+    case     gate_t::Eq:    return *x == *y;
+    case     gate_t::LTEq:  return *x <= *y;
+    case     gate_t::GTEq:  return *x >= *y;
+    case     gate_t::NEq:   return *x != *y;
+
+	// 3 binary operators
+    case gate_t::BAnd:	    return *x & *y;
+    case gate_t::BOr:	    return *x | *y;
+    case gate_t::BXor:	    return *x ^ *y;
+
+    default:
+	cerr << "unknown binop " << op << endl;
+    }
+
+    // only get here if the last default case catches.
+    return null;
 }
 
-int do_un_op (gate_t::unop_t op, int x) {
+optional<int>
+do_un_op (gate_t::unop_t op, optional<int> x)
+{
+    // FIXME: should LNot (Nothing) be Nothing or True??
+
+    if (!x)
+    {
+	return optional<int>();
+    }
+    
     switch (op) {
-    case gate_t::Negate: return -x;
-    case gate_t::BNot:   return ~x;
-    case gate_t::LNot:   return !x;
+    case gate_t::Negate: return - *x;
+    case gate_t::BNot:   return ~ *x;
+    case gate_t::LNot:   return ! *x;
     }
 }
 
@@ -69,10 +121,14 @@ gate_t unserialize_gate (const string& gate)
 
 //    cerr << "the gate " << gate << endl;
     
+    //
+    // gate number
+    //
     lines >> answer.num;
     
     // finish off the first line
     getline (lines, line);
+
 
     //
     // flags
@@ -99,7 +155,7 @@ gate_t unserialize_gate (const string& gate)
 	if (word == "array") {
 	    answer.typ.kind = gate_t::Array;
 	    line_str >> answer.typ.params[0]; // array length
-	    line_str >> answer.typ.params[1]; // size of element type
+	    line_str >> answer.typ.params[1]; // size of element type in bytes
 	}
 	else if (word == "scalar") {
 	    answer.typ.kind = gate_t::Scalar;
@@ -121,6 +177,11 @@ gate_t unserialize_gate (const string& gate)
 	if (word == "BinOp") {
 	    answer.op.kind = gate_t::BinOp;
 	    line_str >> word;
+
+#define CKOP(str,opname) else if (word == str) {			\
+		             answer.op.params[0] = gate_t::opname;	\
+	                 }
+	    
 	    if (word == "+") {
 		answer.op.params[0] = gate_t::Plus;
 	    }
@@ -162,6 +223,16 @@ gate_t unserialize_gate (const string& gate)
 	    else if (word == ">>") {
 		answer.op.params[0] = gate_t::SR;
 	    }
+
+	    CKOP ("&&", And)
+	    CKOP ("||", Or)
+
+	    CKOP ("&", BAnd)
+	    CKOP ("|", BOr)
+	    CKOP ("^", BXor)
+
+#undef CKOP
+	    
 	    else {
 		cerr << "unknown BinOp " << word << endl;
 	    }

@@ -1,3 +1,9 @@
+2006-05-18  Sasho  <sasho@pipe.cs.dartmouth.edu>
+
+	* prep-circuit.cc: Using the Array class to write input values to
+	arrays, so the correct structure (with branches etc) is created.
+	Means some card and crypto code has to be linked in.
+
 2006-02-21  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
 
 	* array.cc: changed the append_new_working_item() function to

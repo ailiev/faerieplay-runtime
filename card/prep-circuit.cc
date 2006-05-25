@@ -7,7 +7,7 @@
 #include <vector>
 #include <utility>
 
-#include <pir/host/objio.h>
+//#include <pir/host/objio.h>
 #include <pir/common/utils.h>
 #include <pir/common/consts.h>
 
@@ -19,7 +19,7 @@
 
 #include <common/misc.h>
 
-#include <card/array.h>
+#include "array.h"
 
 
 using namespace std;
@@ -70,12 +70,8 @@ int main (int argc, char *argv[]) {
     //
     int opt;
     opterr = 0;			// shut up error messages from getopt
-    while ((opt = getopt(argc, argv, "d:h")) != EOF) {
+    while ((opt = getopt(argc, argv, "h")) != EOF) {
 	switch (opt) {
-
-	case 'd':		// directory for keys etc
-	    store_root = optarg;
-	    break;
 
 	case 'h':		// help
 	    usage (argv);
@@ -83,21 +79,29 @@ int main (int argc, char *argv[]) {
 	    exit (EXIT_SUCCESS);
 
 	default:
-	    clog << "Got opt " << char(opt)
+	    clog << "Got unknown opt " << char(optopt)
 		 << ", optarg=" << (optarg ? optarg : "null")
 		 << ", optind=" << optind << endl;
+	    optind++;		// HACK: skip the unknown option's parameter.
+				// What if there was no param?? - no problem,
+				// next call to getopt will just pick up the
+				// next option.
 	    break;
-// 	    usage(argv);
-// 	    exit (EXIT_SUCCESS);
 	}
     }
 
 
+    
+    // need one more param, the circuit file name
+    if (optind >= argc) {
+	usage(argv);
+	exit (EXIT_SUCCESS);
+    }
+
     clog << "optind = " << optind
 	 << ", using circuit file " << argv[optind] << endl;
-    
-    gates_in.open  (argv[optind]);
 
+    gates_in.open  (argv[optind]);
 
     if (!gates_in) {
 	cerr << "Failed to open circuit file " << argv[optind] << endl;
@@ -105,9 +109,9 @@ int main (int argc, char *argv[]) {
     }
     
 
-    // reset the getopt loop
+    
+    // reset the getopt loop, before redoing the option parsing in do_configs()
     optind = 0;
-
 
     init_default_configs ();
     if ( do_configs (argc, argv) != 0 ) {
@@ -116,6 +120,8 @@ int main (int argc, char *argv[]) {
 	exit (EXIT_SUCCESS);
     }
 
+    
+    // initialize crypto
     try
     {
 	g_provfact = init_crypt (g_configs);
@@ -127,15 +133,7 @@ int main (int argc, char *argv[]) {
     }
 
 
-    // need one more param, the circuit file name
-    if (optind >= argc) {
-	usage(argv);
-	exit (EXIT_SUCCESS);
-    }
-
-    
-    init_objio (store_root);
-    
+    // and prepare the circuit and any input array containers.
     try {
 	num_gates = prepare_gates_container (gates_in, g_configs.cct_name);
     }
@@ -170,6 +168,7 @@ int prepare_gates_container (istream & gates_in,
 	values_cont = cct_name + DIRSEP + VALUES_CONT;
 
 
+    // read in all the gates
     while (true) {
 	    
 	// get the gate number
@@ -203,6 +202,10 @@ int prepare_gates_container (istream & gates_in,
     }
 	
     clog << "Done reading circuit" << endl;
+    
+
+
+    // create and fill in the containers
     
     FlatIO
 	io_cct	    (cct_cont,

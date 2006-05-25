@@ -73,6 +73,13 @@ public:
     /// re-permute the objects under a new random permutation
     void repermute ();
 
+    /// get this array's length
+    size_t length ()
+	{
+	    return N;
+	}
+    
+
     
 private:
 
@@ -344,6 +351,12 @@ public:
 	{
 	    _arr->write_clear (i, 0, val);
 	}
+
+    size_t length ()
+	{
+	    return _arr->length();
+	}
+    
 
 private:
 
