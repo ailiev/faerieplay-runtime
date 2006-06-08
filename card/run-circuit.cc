@@ -396,7 +396,7 @@ void CircuitEval::do_gate (const gate_t& g)
 	// and bb2optBasic().
 
 	ByteBuffer val = get_gate_val (g.inputs[0]);
-	ByteBuffer out (1 + len); // one for the Nothing/Just discriminant
+	ByteBuffer out (len);
 
 	LOG (Log::DEBUG, logger,
 	     "Slicer (" << off << "," << len << ")" << val);
@@ -407,10 +407,17 @@ void CircuitEval::do_gate (const gate_t& g)
 	}
 	else
 	{
+	    // last index we need to read is (off+1)+(len-1)-1 = off+len-1,
+	    // so need	val.len() > off+len-1
+	    // or	val.len() >= off+len
 	    assert (val.len() >= off + len);
 	    
 	    out.data()[0] = 1;
-	    memcpy (out.data() + 1, val.data() + 1 + off, len);
+	    memcpy (out.data() + 1,
+		    val.data() + off + 1, // + 1 so we skip the Just indicator
+					  // byte
+		    len-1	// - 1: same reason
+		);
 
 	    LOG (Log::DEBUG, logger,
 		 "Slicer returns " << res_bytes);
@@ -459,10 +466,18 @@ void CircuitEval::do_gate (const gate_t& g)
     
 
     if (elem (gate_t::Output, g.flags)) {
-	int intval;
-	assert (res_bytes.len() == sizeof(intval));
-	memcpy (&intval, res_bytes.data(), sizeof(intval));
-	std::cout << "Output " << g.comment << ": " << intval << std::endl;
+	optional<int> intval = bb2optBasic<int> (res_bytes);
+
+	std::cout << "Output " << g.comment << ": ";
+	if (intval)
+	{
+	    std::cout << *intval;
+	}
+	else
+	{
+	    std::cout << "Nothing";
+	}
+	std::cout << std::endl;
     }
 }
 

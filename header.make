@@ -5,7 +5,7 @@
 # deeper.
 
 
-ROOTDIR=$(HOME)/work/code/sfdl-runtime
+ROOTDIR=..
 
 PIR=$(ROOTDIR)/../pir
 PIRCARD=$(PIR)/card

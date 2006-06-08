@@ -237,6 +237,7 @@ Array::select (index_t a, index_t b, bool sel_first)
 	unsel = sel_first ? b : a;
     
     select (*_Ts[a], *_Ts[b], sel_first);
+// TODO: dont discard unselected!!
     _Ts[unsel]      = shared_ptr<ArrayT> (); // set to an empty shared_ptr
     
     return sel;
@@ -248,7 +249,8 @@ Array::select (index_t a, index_t b, bool sel_first)
 void Array::repermute ()
 {
     LOG (Log::PROGRESS, _logger,
-	 "Array::repermute() on array " << _name);
+	 "Array::repermute() on array " << _name
+	 << ", " << N  << " elems");
     
     // duplicate all the A's which have corresponding T's
 	
@@ -389,7 +391,7 @@ void Array::repermute_As(const shared_ptr<TwoWayPermutation>& old_p,
 
 
 // stream program to select one of two I/O streams. The output only goes into
-// the first stream, the second is not used and can be set to NULL.
+// the first stream, the second output is not used and can be set to NULL.
 struct selector_prog
 {
     selector_prog (bool sel_first)
@@ -928,6 +930,12 @@ ArrayHandle::select (ArrayHandle& a,
     _arrays.erase (b._desc);
     
     des_t desc = _next_array_num++;
+
+    LOG (Log::DEBUG, Array::_logger,
+	 "Erasing arr desc " << a._desc
+	 << " and arr desc " << b._desc
+	 << ", inserting arr desc " << desc);
+
     ArrayHandle newh (arr, sel_branch, depth, desc);
     _arrays.insert (make_pair (desc, newh));
 
@@ -991,7 +999,7 @@ ArrayHandle::make_new_branch (unsigned depth)
     else {
 	// don't make another branch but just use this one - there should be no
 	// more branches of this ArrayHandle at this depth
-	new_branch = _branch;
+/	new_branch = _branch;
     }
 
     // add a new Handle with this branch number to the map

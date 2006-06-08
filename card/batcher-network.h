@@ -25,7 +25,8 @@ namespace BatcherNetwork {
     extern Log::logger_t logger;
 
     DECL_STATIC_INIT(logger = Log::makeLogger ("batcher-network",
-					       boost::none, boost::none));
+					       boost::none,
+					       Just (Log::PROGRESS)));
 }
 
 
@@ -75,7 +76,7 @@ void run_batcher
 	// the group.
 	LOG (Log::PROGRESS, BatcherNetwork::logger,
 	     "Merger " << std::setw(3) << m << " half-cleaners @ "
-	     << epoch_time);
+	     << epoch_secs());
 	
 	// can stop doing half-cleaner groups when the bottom rightmost wire in
 	// the group > N-1, ie. go while that wire <= N-1, ie.
@@ -118,7 +119,7 @@ void run_batcher
 		"Merger " << std::setw(3) << m_outer
 		<< ", bitonic sorter level "
 		<< std::setw (3) << lgN_floor(m) << " @ "
-		<< epoch_time);
+		<< epoch_secs());
 	    
 	    // g is the first wire in the current group
 	    // can stop doing wire-groups when the bottom of the first wire is > N-1,

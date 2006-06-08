@@ -61,7 +61,9 @@ using std::vector;
 
 
 namespace {
-    Log::logger_t logger = Log::makeLogger ("batcher-permute");
+    Log::logger_t logger = Log::makeLogger ("batcher-permute",
+					    boost::none,
+					    Just (Log::PROGRESS));
 }
 
 
@@ -87,14 +89,11 @@ Shuffler::Shuffler (shared_ptr<FlatIO> container,
 void Shuffler::shuffle ()
     throw (hostio_exception, crypto_exception, runtime_exception)
 {
-    LOG (Log::PROGRESS, logger,
-	 "Start preparing DB @ " << epoch_time);
-    
     // add the destination index tags to all the records
     prepare ();
 
     LOG (Log::PROGRESS, logger,
-	 "Done with preparing DB @ " << epoch_time);
+	 "Start DB shuffle @ " << epoch_secs());
     
 
     // perform the permutation using our own switch function object to perform
@@ -109,13 +108,13 @@ void Shuffler::shuffle ()
 	run_batcher (N, comparator, &comparator);
     }
 
+    LOG (Log::PROGRESS, logger,
+	 "Shuffle done @ " << epoch_secs());
+
     // now need to remove the tags of the records
     // could have been good to do it at the last stage of sorting
     // though, need to think about this
     remove_tags ();
-
-    LOG (Log::PROGRESS, logger,
-	 "Shuffle done @ " << epoch_time);
 }
 
 

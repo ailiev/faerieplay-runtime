@@ -1,5 +1,6 @@
 include ../../header.make
 
+ROOTDIR := ../$(ROOTDIR)
 
 include $(PIR)/utils.make
 include $(PIR)/header.make
@@ -9,6 +10,8 @@ LIBSRCS = processor.cc
 
 LIB=libcard-stream
 LIBFILE=$(LIB).$(LIBEXT)
+
+all: libs
 
 $(LIB).so: $(LIBOBJS)
 	$(CXXLINK)
@@ -23,8 +26,6 @@ LIBDIRS		+= $(LEEDS_LIB) ../common
 LDLIBFILES	+= -lcard -lsfdl-common -lcommon
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
-
-all: libs tests
 
 install: libs
 	$(INSTALL) $(LIBFILE) $(LEEDS_LIB)

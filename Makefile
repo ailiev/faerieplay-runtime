@@ -1,4 +1,4 @@
-SUBDIRS = common card host
+SUBDIRS = common card # host
 
 subdirs: $(SUBDIRS)
 
@@ -10,6 +10,7 @@ $(SUBDIRS):
 all: subdirs
 clean: subdirs
 install: subdirs
+dep: subdirs
 
 doc: doxygen.project
 	doxygen doxygen.project

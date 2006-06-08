@@ -14,7 +14,8 @@ SUBDIRS:=stream
 
 
 ifdef HAVE_4758_CRYPTO
-	CPPFLAGS += -I$(4758_KERNEL_INCLUDE)
+# done in header.make
+#	CPPFLAGS += -I$(4758_KERNEL_INCLUDE)
 endif
 ifdef COMM_SCC
 	CPPFLAGS += -I$(SCC_INCLUDE)
@@ -39,7 +40,8 @@ TESTSRCS=$(wildcard test-*.cc)
 
 
 # the headers for the 4758 crypto interface are in the IBM patched kernel source
-4758_KERNEL_INCLUDE = $(TOP)/$(TREE)/card/linux-2.2.17/drivers
+#4758_KERNEL_INCLUDE = $(TOP)/$(TREE)/card/linux-2.2.17/drivers
+
 # SCC communication headers
 SCC_INCLUDE = $(TOP)/$(TREE)/include
 
