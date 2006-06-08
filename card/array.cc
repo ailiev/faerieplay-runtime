@@ -991,16 +991,8 @@ ArrayHandle::des_t
 ArrayHandle::make_new_branch (unsigned depth)
 {
     index_t new_branch;
-    if (!_has_branched) {
-	// whole new branch!
-	new_branch = _arr->newBranch (_branch);
-	_has_branched = true;
-    }
-    else {
-	// don't make another branch but just use this one - there should be no
-	// more branches of this ArrayHandle at this depth
-/	new_branch = _branch;
-    }
+
+    new_branch = _arr->newBranch (_branch);
 
     // add a new Handle with this branch number to the map
     des_t desc = _next_array_num++;
