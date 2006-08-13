@@ -273,9 +273,9 @@ int prepare_gates_container (istream & gates_in,
 		    {
 			cerr << "Elt " << l_i << " field " << e_i << ": " << flush;
 			do
-			{
-			    cin  >> in_str;
-			} while (in_str.size() == 0 || in_str[0] == '#');
+			{}
+			while ( cin  >> in_str &&
+				(in_str.size() == 0 || in_str[0] == '#') );
 
 			ins.push_back (atoi (in_str.c_str()));
 		    }
