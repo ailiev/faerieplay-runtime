@@ -33,22 +33,33 @@ private:
 
     void do_gate (const gate_t& g);
     
+    /// Read the gate at the given circuit step.
+    void read_gate_at_step (gate_t & o_gate,
+			    int step_num);
+
+    /// read the gate of the given number.
     void read_gate (gate_t & o_gate,
 		    int gate_num);
 
+    /// a helper for the above two which does the real work when given a
+    /// container to read from.
+    void read_gate_helper (FlatIO & io,
+			   gate_t & o_gate,
+			   int num);
+	
     /// @return the descriptor of the resulting array
     ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
-			      boost::optional<int> idx,
-			      unsigned depth,
+			      boost::optional<index_t> idx,
+			      unsigned prev_depth, unsigned depth,
 			      ByteBuffer & o_val);
 
     /// @return the descriptot of the resulting array
     ByteBuffer do_write_array (const ByteBuffer& arr_ptr_buf,
 			       size_t off,
 			       boost::optional<size_t> len,
-			       boost::optional<int> idx,
+			       boost::optional<index_t> idx,
 			       const ByteBuffer& new_val,
-			       int prev_depth, int this_depth);
+			       unsigned prev_depth, unsigned this_depth);
 
     /// get the current value at this gate's output
     boost::optional<int> get_int_val (int gate_num);
@@ -59,8 +70,10 @@ private:
     void put_gate_val (int gate_num, const ByteBuffer& val);
     
     
-    FlatIO _cct_io;
-    FlatIO _vals_io;
+    FlatIO
+    _gates_io,			// the gates s.t. gate number g is at _gates_io[g]
+	_cct_io,		// the gates in (topological) order of execution
+	_vals_io;		// values, s.t. val of gate g is at _vals_io[g]
 
     CryptoProviderFactory * _prov_fact;
 

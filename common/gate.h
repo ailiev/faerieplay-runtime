@@ -4,6 +4,8 @@
 #include <string>
 #include <ostream>
 
+#include <string.h>
+
 #include <pir/common/exceptions.h>
 #include <pir/common/utils.h>
 
@@ -169,6 +171,23 @@ inline
 bool isOptBBJust (const ByteBuffer& buf)
 {
     return buf.data()[0] != 0;
+}
+
+// set a ByteBuffer (of any size >= 1) to NIL, by setting the first byte to 0
+inline
+void makeOptBBNothing (ByteBuffer& io_buf)
+{
+    io_buf.data()[0] = 0;
+}
+
+// make an Optional ByteBuffer contain the specified bytes.
+inline
+void makeOptBBJust (ByteBuffer & io_buf, const void * bytes, size_t len)
+{
+    assert (io_buf.len() >= len+1);
+    
+    io_buf.data()[0] = 1;
+    memcpy (io_buf.data() + 1, bytes, len);
 }
 
 

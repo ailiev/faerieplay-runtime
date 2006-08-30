@@ -183,7 +183,10 @@ private:
 
 	boost::shared_ptr<ArrayA> _A; // the A we're working with
 	
-	mutable FlatIO _idxs, _items;
+	mutable FlatIO
+	_idxs,			// this is the physical (ie. permuted) index
+				// of the item
+	    _items;		// the actual item.
 
 	/// how many retrievals already done this session?
 	/// make this point into the owner Array's _num_retrievals, who will
@@ -322,6 +325,10 @@ public:
 	    return _desc;
 	}
 
+    void setLastDepth (unsigned d) {
+	_last_depth = d;
+    }
+
     
     // the three methods just proxy on to the Array object, adding a branch
     // parameter.
@@ -331,7 +338,7 @@ public:
     /// @param off the offset in bytes within that index, where we place the new
     /// value
     ArrayHandle &
-    write (index_t idx, size_t off,
+    write (boost::optional<index_t> idx, size_t off,
 	   const ByteBuffer& val,
 	   unsigned depth)
 	throw (better_exception);
@@ -341,7 +348,7 @@ public:
     /// @param idx the index
     /// @return new ByteBuffer with the value
     ArrayHandle &
-    read (index_t i, ByteBuffer & out, unsigned depth)
+    read (boost::optional<index_t> i, ByteBuffer & out, unsigned depth)
 	throw (better_exception);
     
     /// Write a value non-hidden, probably during initialization.

@@ -146,7 +146,8 @@ INSTANTIATE_STATIC_INIT(CircuitEval);
 CircuitEval::CircuitEval (const std::string& cctname,
 			  CryptoProviderFactory * fact)
     // tell the HostIO to not use a write cache (size 0)
-    : _cct_io	(cctname + DIRSEP + CCT_CONT, none),
+    : _gates_io (cctname + DIRSEP + GATES_CONT, none),
+      _cct_io	(cctname + DIRSEP + CCT_CONT, none),
       _vals_io	(cctname + DIRSEP + VALUES_CONT, none),
       _prov_fact    (fact)
 {
@@ -175,7 +176,7 @@ void CircuitEval::eval ()
 	    LOG (Log::PROGRESS, logger, "Doing gate " << i);
 	}
 
-	read_gate (gate, i);
+	read_gate_at_step (gate, i);
 
 	LOG (Log::DEBUG, logger, gate << LOG_ENDL);
 
@@ -184,22 +185,39 @@ void CircuitEval::eval ()
 }    
 
 
+void CircuitEval::read_gate_at_step (gate_t & o_gate,
+				     int step_num)
+    
+{
+    read_gate_helper (_cct_io, o_gate, step_num);
+}
+
 void CircuitEval::read_gate (gate_t & o_gate,
 			     int gate_num)
     
 {
+    read_gate_helper (_gates_io, o_gate, gate_num);
+}
+
+
+void CircuitEval::read_gate_helper (FlatIO & io,
+				    gate_t & o_gate,
+				    int num)
+{
     ByteBuffer gate_bytes;
     
-    _cct_io.read (static_cast<index_t>(gate_num), gate_bytes);
+    io.read (static_cast<index_t>(num), gate_bytes);
 
     LOG (Log::DUMP, logger,
 	 "Unwrapped gate to " << gate_bytes.len() << " bytes");
+
     string gate_str (gate_bytes.cdata(), gate_bytes.len());
 
     LOG (Log::DUMP, logger, "gate_byte len: " << gate_bytes.len());
 
     o_gate = unserialize_gate (gate_str);
 }
+
 
 
 void CircuitEval::do_gate (const gate_t& g)
@@ -329,11 +347,19 @@ void CircuitEval::do_gate (const gate_t& g)
     
     case gate_t::ReadDynArray:
     {
-	ByteBuffer arr_ptr = get_gate_val (g.inputs[0]);
-	optional<int> idx = get_int_val (g.inputs[1]);
+	int arr_gate_num = g.inputs[0];
+	ByteBuffer arr_ptr = get_gate_val (arr_gate_num);
+	optional<index_t> idx = static_cast<optional<index_t> > (get_int_val (g.inputs[1]));
+	
+	// read in the whole gate where the array came from to see what depth it
+	// was at
+	gate_t arr_val_gate;
+	read_gate (arr_val_gate, arr_gate_num);
 	
 	ByteBuffer val;
-	ByteBuffer arr2 = do_read_array (arr_ptr, idx, g.depth, val);
+	ByteBuffer arr2 = do_read_array (arr_ptr, idx,
+					 arr_val_gate.depth, g.depth,
+					 val);
 
 	ByteBuffer outs [] = {  arr2, val };
 	res_bytes = concat_bufs (outs, outs + ARRLEN(outs));
@@ -352,7 +378,7 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	ByteBuffer arr_ptr = get_gate_val (arr_gate_num);
 	// the index to write to
-	optional<int> idx = get_int_val (g.inputs[1]);
+	optional<index_t> idx = static_cast<optional<index_t> > (get_int_val (g.inputs[1]));
 
 	// and load up the rest of the inputs into vals
 	vector<ByteBuffer> vals (g.inputs.size()-2);
@@ -366,9 +392,9 @@ void CircuitEval::do_gate (const gate_t& g)
 	// concatenate the inputs
 	ByteBuffer ins = concat_bufs (vals.begin(), vals.end());
 
-	// read in the whole array gate to see what depth it was at
-	gate_t arr_gate;
-	read_gate (arr_gate, arr_gate_num);
+	// read in the whole array source gate to see what depth it was at
+	gate_t arr_val_gate;
+	read_gate (arr_val_gate, arr_gate_num);
 
 	ByteBuffer arr_desc2 = do_write_array (
 	    arr_ptr,
@@ -376,7 +402,7 @@ void CircuitEval::do_gate (const gate_t& g)
 	    len >= 0 ? Just((size_t)len) : none,			
 	    idx,
 	    ins,
-	    arr_gate.depth, g.depth);
+	    arr_val_gate.depth, g.depth);
 
 	// return the array pointer
 	res_bytes = arr_desc2;
@@ -397,30 +423,41 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	ByteBuffer val = get_gate_val (g.inputs[0]);
 	ByteBuffer out (len);
+	out.set (0);	// so it's not uninitialized
+	
 
 	LOG (Log::DEBUG, logger,
 	     "Slicer (" << off << "," << len << ")" << val);
 
 	if (!isOptBBJust (val))
 	{
-	    out.data()[0] = 0;
+	    makeOptBBNothing(out);
 	}
 	else
 	{
 	    // last index we need to read is (off+1)+(len-1)-1 = off+len-1,
 	    // so need	val.len() > off+len-1
 	    // or	val.len() >= off+len
-	    assert (val.len() >= off + len);
-	    
-	    out.data()[0] = 1;
-	    memcpy (out.data() + 1,
-		    val.data() + off + 1, // + 1 so we skip the Just indicator
-					  // byte
-		    len-1	// - 1: same reason
-		);
-
 	    LOG (Log::DEBUG, logger,
-		 "Slicer returns " << res_bytes);
+		 "Slicer has val.len()=" << val.len()
+		 << ",off=" << off << ",len=" << len);
+
+	    if (val.len() < off + len) {
+		// not enough data, presumably because an array read returned
+		// NIL (and thus only the array pointer and no data). return NIL.
+		LOG (Log::INFO, logger, "Slicer returning NIL");
+		makeOptBBNothing (out);
+	    }
+	    else
+	    {
+		makeOptBBJust (out,
+			       val.data() + 1 + off, // + 1 to skip the Just
+						     // indicator byte
+			       len-1);		     // -1 for same reason.
+
+		LOG (Log::DEBUG, logger,
+		     "Slicer returns " << res_bytes);
+	    }
 	}
 
 	res_bytes = out;
@@ -532,8 +569,8 @@ string CircuitEval::get_string_val (int gate_num)
 
 
 ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
-				       optional<int> idx,
-				       unsigned depth,
+				       optional<index_t> idx,
+				       unsigned prev_depth, unsigned depth,
 				       ByteBuffer & o_val)
 {
     optional<ArrayHandle::des_t> desc, null;
@@ -548,16 +585,9 @@ ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
     }
 
     ArrayHandle & arr = ArrayHandle::getArray (*desc);
+    arr.setLastDepth (prev_depth);
 
-    if (!idx || *idx < 0 || *idx >= arr.length())
-    {
-	// no write
-	LOG (Log::INFO, logger,
-	     "do_read_array got a null or outside-bounds index " << idx);
-	return arr_ptr;
-    }
-
-    ArrayHandle & arr2 = arr.read (*idx, o_val, depth);
+    ArrayHandle & arr2 = arr.read (idx, o_val, depth);
     
     return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }
@@ -566,9 +596,9 @@ ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
 ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
 					size_t off,
 					optional<size_t> len,
-					optional<int> idx,
+					optional<index_t> idx,
 					const ByteBuffer& new_val,
-					int prev_depth, int this_depth)
+					unsigned prev_depth, unsigned this_depth)
     
 {
     optional<ArrayHandle::des_t> desc, null;
@@ -581,24 +611,15 @@ ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
 	return optBasic2bb (null);
     }
 
-//     assert (arr_ptr_buf.len() == sizeof(desc));
-//     memcpy (&desc, arr_ptr_buf.data(), sizeof(desc));
-
     if (len)
     {
 	assert (*len == new_val.len());
     }
     
     ArrayHandle & arr = ArrayHandle::getArray (*desc);
+    arr.setLastDepth (prev_depth);
 
-    if (!idx || *idx < 0 || *idx >= arr.length()) {
-	// no write
-	LOG (Log::INFO, logger,
-	     "do_write_array got a null or outside-bounds index " << idx);
-	return arr_ptr_buf;
-    }
-    
-    ArrayHandle & arr2 = arr.write (*idx, off, new_val, this_depth);
+    ArrayHandle & arr2 = arr.write (idx, off, new_val, this_depth);
 
     return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }

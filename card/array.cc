@@ -332,6 +332,8 @@ void Array::append_new_working_item (index_t idx, index_t branch)
 {
     index_t rand_idx;
     optional<index_t> to_append;
+    
+    // find an index to append to the working set.
     while (!to_append)
     {
 	rand_idx = _rand_prov->randint (N);
@@ -343,7 +345,12 @@ void Array::append_new_working_item (index_t idx, index_t branch)
 
 
     ByteBuffer obj;
-    // append the corresponding item to each T
+    // append the corresponding item to *each* T.
+    // REASON: maintain invariant that each i in A is touched 0 or 1 times in a
+    // session.
+    // FIXME: actually this is not true, each i could be read between 0 and #T's
+    // times, though that number is visible to the adversary, determined by the
+    // code/circuit.
     FOREACH (T, _Ts) {
 	if (*T)
 	{
@@ -358,7 +365,9 @@ void Array::append_new_working_item (index_t idx, index_t branch)
 }
 
 
-/// merge a T into an A
+/// merge a T into an A.
+/// No access pattern difficulties, the adversary has already seen the indices
+/// copied to the T.
 void
 Array::merge (const ArrayT& T, ArrayA& A)
 {
@@ -543,6 +552,9 @@ Array::ArrayT::ArrayT (const ArrayT& b,
 
 
 
+// result:
+// have_target = do we have target_index in the container?
+// have_rand   = do we have rand_idx in the container?
 struct rand_idx_and_have_idx
 {
     rand_idx_and_have_idx (index_t target_index,
@@ -585,6 +597,10 @@ find_fetch_idx (index_t rand_idx, index_t target_idx)
 		    zero_to_n (*_num_retrievals),
 		    &_idxs,
 		    NULL);
+    
+    // FIXME: why do we insist on finding a random item, even if it's not
+    // needed? Can we do without this? It probably doesnt make much difference
+    // on the time complexity, but seems unneeded.
     
     return prog.have_rand   ?	// the suggested rand_idx is already present in
 				// T, so need to try another one.
@@ -768,7 +784,8 @@ Array::ArrayA::ArrayA (const std::string& name, /// the array name
 }
 
 
-// make a duplicate of ArrayA b, at this branch index.
+/// make a duplicate of ArrayA b, at the specified branch index.
+/// Called only from ArrayA::duplicate().
 Array::ArrayA::ArrayA (const ArrayA& b, unsigned branch)
     : _name	    (b._name),
       _io	    (_name + "-b" + itoa(branch) + "-" + itoa(_counter++),
@@ -914,26 +931,46 @@ ArrayHandle::select (ArrayHandle& a,
 		     bool sel_first,
 		     unsigned depth)
 {
+    // we'll actually work with these
+    ArrayHandle *h1 = &a,
+	*h2 = &b;
+
+    LOG (Log::DEBUG, Array::_logger,
+	 "Selecting array descs " << a._desc << "," << b._desc);
+    
+    // make a new copy of one of the handles if needed, should not be needed for both.
+    assert (! (depth > h1->_last_depth && depth > h2->_last_depth) );
+    
+    if (depth > h1->_last_depth) {
+	h1 = & _arrays[ h1->make_new_branch (depth) ];
+    }
+    else if (depth > h2->_last_depth) {
+	h2 = & _arrays[ h2->make_new_branch (depth) ];
+    }
+    
+
     // the two Array objects should be the same. shared_ptr compares pointer
     // values as needed.
-    if (a._arr != b._arr)
+    if (h1->_arr != h2->_arr)
     {
 	throw illegal_operation_argument ("select array on different arrays");
     }
-    
-    shared_ptr<Array> & arr = a._arr;
 
-    index_t sel_branch = arr->select (a._branch, b._branch, sel_first);
+    shared_ptr<Array> & arr = h1->_arr;
+
+    
+    // Do the Select
+    index_t sel_branch = arr->select (h1->_branch, h2->_branch, sel_first);
 
     // toss the two old handles
-    _arrays.erase (a._desc);
-    _arrays.erase (b._desc);
+    _arrays.erase (h1->_desc);
+    _arrays.erase (h2->_desc);
     
     des_t desc = _next_array_num++;
 
     LOG (Log::DEBUG, Array::_logger,
-	 "Erasing arr desc " << a._desc
-	 << " and arr desc " << b._desc
+	 "Erasing arr desc " << h1->_desc
+	 << " and arr desc " << h2->_desc
 	 << ", inserting arr desc " << desc);
 
     ArrayHandle newh (arr, sel_branch, depth, desc);
@@ -942,21 +979,40 @@ ArrayHandle::select (ArrayHandle& a,
     return _arrays[desc];
 }
 
-
+// NOTE: may get an out-of-range index here, but still may need to generate a
+// new array branch.
 ArrayHandle &
-ArrayHandle::write (index_t idx, size_t off,
+ArrayHandle::write (optional<index_t> idx, size_t off,
 		    const ByteBuffer& val,
 		    unsigned depth)
     throw (better_exception)
 {
+    LOG (Log::DEBUG, Array::_logger,
+	 "Write on desc " << _desc);
+    
     if (depth > _last_depth)
     {
 	des_t desc = make_new_branch (depth);
 
+	// recursive call
 	return _arrays[desc].write(idx, off, val, depth);
     }
 
-    _arr->write (idx, off, val, _branch);
+
+    if (!idx) {
+	// no write
+	LOG (Log::INFO, Array::_logger,
+	     "ArrayHandle::write() got a null index");
+	return *this;
+    }
+    else if (*idx < 0 || *idx >= length()) {
+	// no write
+	LOG (Log::INFO, Array::_logger,
+	     "ArrayHandle::write() got a outside-bounds index " << *idx);
+	return *this;
+    }
+
+    _arr->write (*idx, off, val, _branch);
     return *this;
 }
 
@@ -970,11 +1026,14 @@ ArrayHandle::write (index_t idx, size_t off,
 /// that array branch. a new ArrayHandle is produced if this is a deeper
 /// conditional depth.
 ArrayHandle &
-ArrayHandle::read (index_t idx,
+ArrayHandle::read (optional<index_t> idx,
 		   ByteBuffer & out,
 		   unsigned depth)
     throw (better_exception)
 {
+    LOG (Log::DEBUG, Array::_logger,
+	 "Read on desc " << _desc);
+
     if (depth > _last_depth)
     {
 	des_t desc = make_new_branch (depth);
@@ -982,7 +1041,23 @@ ArrayHandle::read (index_t idx,
 	return _arrays[desc].read (idx, out, depth);
     }
 
-    out = _arr->read (idx, _branch);
+    
+    if (!idx) {
+	// no read
+	LOG (Log::INFO, Array::_logger,
+	     "ArrayHandle::read() got a null index");
+	return *this;
+    }
+    else if (*idx < 0 || *idx >= length()) {
+	// no read
+	LOG (Log::INFO, Array::_logger,
+	     "ArrayHandle::read() got a outside-bounds index " << *idx);
+	return *this;
+    }
+
+    
+    out = _arr->read (*idx, _branch);
+
     return *this;
 }
 
