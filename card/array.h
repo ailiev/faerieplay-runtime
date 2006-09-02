@@ -69,6 +69,11 @@ public:
     /// Write a value non-hidden, probably during initialization
     void write_clear (index_t i, size_t off, const ByteBuffer& val)
  	throw (host_exception, comm_exception);
+
+    /// Read a value without index protection and with minimal effort.
+    ByteBuffer read_clear (index_t i, index_t branch=0)
+	throw (better_exception);
+    
     
     /// re-permute the objects under a new random permutation
     void repermute ();
@@ -78,6 +83,11 @@ public:
 	{
 	    return N;
 	}
+
+    // almost like an operator<<, except for the branch parameter.
+    static std::ostream& print (std::ostream& os,
+				Array & arr,
+				index_t branch);
     
 
     
@@ -359,11 +369,20 @@ public:
 	    _arr->write_clear (i, 0, val);
 	}
 
-    size_t length ()
+    ByteBuffer read_clear (index_t i)
+	throw (better_exception)
+	{
+	    return _arr->read_clear (i, _branch);
+	}
+
+    size_t length () const
 	{
 	    return _arr->length();
 	}
-    
+
+
+    // print an ArrayHandle's contents, in order from index 0 to N-1
+    friend std::ostream& operator<< (std::ostream& os, ArrayHandle& arr);
 
 private:
 
@@ -402,7 +421,9 @@ private:
     static map_t _arrays;
     static int _next_array_num;
 
+
 };
+
 
 
 CLOSE_NS

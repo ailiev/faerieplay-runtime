@@ -1,5 +1,7 @@
 # generate a write for each index
 # and then some number of random read/write steps
+# 
+# Usage: just run it, params are read from file $paramdefs
 
 
 out='array-test-cmds.txt'

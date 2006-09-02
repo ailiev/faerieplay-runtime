@@ -42,6 +42,19 @@
 std::auto_ptr<CryptoProviderFactory> g_provfact;
 
 
+// local functions.
+namespace {
+    // print the value of a gate, whose result bytes are 'valbytes'
+    std::string
+    write_value (gate_t::typ_kind_t kind, const ByteBuffer& valbytes);
+
+    // get an array handle from an array pointer
+    pir::ArrayHandle & get_array (const ByteBuffer& arr_ptr_buf);
+
+    // the number of bytes in a flat optional<word>
+    const size_t OPT_WORD_SIZE = 5;
+}
+
 
 
 static void exception_exit (const std::exception& ex, const std::string& msg) {
@@ -268,7 +281,9 @@ void CircuitEval::do_gate (const gate_t& g)
 
     
     case gate_t::Input:
-	if (g.typ.kind == gate_t::Array)
+	switch (g.typ.kind)
+	{
+	case gate_t::Array:
 	{
 	    // need to load up the array
 	    string arr_cont_name = g.comment;
@@ -277,15 +292,29 @@ void CircuitEval::do_gate (const gate_t& g)
 								_prov_fact,
 								g.depth);
 
+	    // for the logging
+	    res = arr_ptr;
+
 	    res_bytes = optBasic2bb (Just (arr_ptr));
 	}
-
-	// nothing to do for Scalars, the value is already set up by prep-circuit
 	break;
+	case gate_t::Scalar:
+	    // nothing to do for Scalars, the value is already set up by
+	    // prep-circuit
+	    // but, to keep the execution trace complete, load up the value and put
+	    // it into res_bytes
+	    res_bytes = get_gate_val (g.num);
+
+	    res = bb2optBasic<int> (res_bytes);
+
+	    break;
+	} // switch (g.typ.kind)
+	
+	break;			// case gate_t::Input
 
     case gate_t::Lit:
 	// place the lit value into the slot
-	res = g.op.params[0];
+	res 	  = g.op.params[0]; // NOTE: this promotes an int to an optional<int>
 	res_bytes = optBasic2bb (res);
 
 	break;
@@ -361,7 +390,7 @@ void CircuitEval::do_gate (const gate_t& g)
 					 arr_val_gate.depth, g.depth,
 					 val);
 
-	ByteBuffer outs [] = {  arr2, val };
+	ByteBuffer outs [] = { arr2, val };
 	res_bytes = concat_bufs (outs, outs + ARRLEN(outs));
 
 	LOG (Log::DEBUG, logger,
@@ -491,11 +520,17 @@ void CircuitEval::do_gate (const gate_t& g)
 
     }
 
-    LOG (Log::DEBUG, gate_logger,
-	 std::setiosflags(std::ios::left)
-	 << std::setw(6) << g.num
-	 << std::setw(12) << res
-	 << res_bytes);
+
+    //
+    // log to the gate values log
+    // Want: arrays to be logged in their entirety whereever they appear. ie.
+    // no array pointers, just whole values.
+    //
+    LOG ( Log::DEBUG, gate_logger,
+	  std::setiosflags(std::ios::left)
+	  << std::setw(6) << g.num
+//	 << std::setw(12) << (res ? itoa(*res) : "N")
+	  << write_value (g.typ.kind, res_bytes) );
     
     if (res_bytes.len() > 0) {
 	put_gate_val (g.num, res_bytes);
@@ -503,18 +538,60 @@ void CircuitEval::do_gate (const gate_t& g)
     
 
     if (elem (gate_t::Output, g.flags)) {
-	optional<int> intval = bb2optBasic<int> (res_bytes);
+	switch (g.typ.kind)
+	{
+	case gate_t::Scalar:
+	{
+	    optional<int> intval = bb2optBasic<int> (res_bytes);
 
-	std::cout << "Output " << g.comment << ": ";
-	if (intval)
-	{
-	    std::cout << *intval;
+	    std::cout << "Output Scalar " << g.comment << ": ";
+	    if (intval)
+	    {
+		std::cout << *intval;
+	    }
+	    else
+	    {
+		std::cout << "Nothing";
+	    }
+	    std::cout << std::endl;
 	}
-	else
+	break;
+	case gate_t::Array:
 	{
-	    std::cout << "Nothing";
+	    optional<ArrayHandle::des_t> desc;
+	    ByteBuffer buf;
+	    optional<int> int_val;
+	    
+	    desc = bb2optBasic<ArrayHandle::des_t> (res_bytes);
+
+	    if (!desc)
+	    {
+		LOG (Log::ERROR, logger,
+		     "CircuitEval Output: got a null array pointer!");
+		return;
+	    }
+
+	    ArrayHandle & arr = ArrayHandle::getArray (*desc);
+
+	    std::cout << "Output Array " << g.comment
+		      << " of " << arr.length() << " elements:" << std::endl;
+	    for (unsigned i=0; i < arr.length(); i++)
+	    {
+		(void) arr.read (i, buf, g.depth);
+		// FIXME: this is converting to integers, not very general.
+		int_val = bb2optBasic<int> (buf);
+		if (!int_val) {
+		    std::cout << "Nothing" << std::endl;
+		}
+		else {
+		    std::cout << *int_val << std::endl;
+		}
+	    }
+	    
+
 	}
-	std::cout << std::endl;
+	break;
+	} // end switch (g.typ.kind)
     }
 }
 
@@ -573,18 +650,10 @@ ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
 				       unsigned prev_depth, unsigned depth,
 				       ByteBuffer & o_val)
 {
-    optional<ArrayHandle::des_t> desc, null;
+    optional<ArrayHandle::des_t> null;
+    
+    ArrayHandle & arr = get_array (arr_ptr);
 
-    desc = bb2optBasic<ArrayHandle::des_t> (arr_ptr);
-
-    if (!desc)
-    {
-	LOG (Log::ERROR, logger,
-	     "CircuitEval::do_read_array: got a null array pointer!");
-	return optBasic2bb (null);
-    }
-
-    ArrayHandle & arr = ArrayHandle::getArray (*desc);
     arr.setLastDepth (prev_depth);
 
     ArrayHandle & arr2 = arr.read (idx, o_val, depth);
@@ -603,22 +672,15 @@ ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
 {
     optional<ArrayHandle::des_t> desc, null;
     
-    desc = bb2optBasic<ArrayHandle::des_t> (arr_ptr_buf);;
-
-    if (!desc) {
-	LOG (Log::ERROR, logger,
-	     "CircuitEval::do_write_array: got a null array pointer!");
-	return optBasic2bb (null);
-    }
+    ArrayHandle & arr = get_array (arr_ptr_buf);
+    
+    arr.setLastDepth (prev_depth);
 
     if (len)
     {
 	assert (*len == new_val.len());
     }
     
-    ArrayHandle & arr = ArrayHandle::getArray (*desc);
-    arr.setLastDepth (prev_depth);
-
     ArrayHandle & arr2 = arr.write (idx, off, new_val, this_depth);
 
     return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
@@ -644,3 +706,63 @@ void serialize(Archive & ar, optional<int> & g, const unsigned int version)
 
 
 CLOSE_NS
+
+
+
+
+
+
+OPEN_ANON_NS
+
+
+std::string
+write_value (gate_t::typ_kind_t kind, const ByteBuffer& valbytes)
+{
+    std::ostringstream os;
+
+    switch (kind) {
+    case gate_t::Scalar:
+	os << valbytes;
+	break;
+    case gate_t::Array:
+    {
+	// the first 5 bytes is the array pointer, and the rest are other
+	// values.
+	os << "(";
+
+	const ByteBuffer arr_ptr_buf (valbytes, 0, OPT_WORD_SIZE),
+	    val_rest (valbytes, OPT_WORD_SIZE, valbytes.len() - OPT_WORD_SIZE);
+	
+	pir::ArrayHandle& arr = get_array (arr_ptr_buf);
+	os << arr;
+
+	if (val_rest.len() > 0) {
+	    os << "," << val_rest;
+	}
+
+	os << ")";
+    }
+    break;
+	
+    }
+
+    return os.str();
+}
+
+pir::ArrayHandle & get_array (const ByteBuffer& arr_ptr_buf)
+{
+    boost::optional<pir::ArrayHandle::des_t> desc;
+    desc = bb2optBasic<pir::ArrayHandle::des_t> (arr_ptr_buf);
+
+    if (!desc) {
+	throw bad_arg_exception
+	    ("CircuitEval::get_array: got a null array pointer!");
+    }
+
+    return pir::ArrayHandle::getArray (*desc);
+}
+
+CLOSE_NS			// anonymous
+
+
+    

@@ -43,10 +43,24 @@ using boost::optional;
 using boost::none;
 
 
+//
 // options to use a watered down algorithm, if the full and proper one is
 // failing.
+//
+
+// Do not do re-fetching within a retrieval session. Still copy from A to the
+// correct T, so that branches work.
+// FIXME: this does not work for now. It is not that useful anyway, as it takes
+// more than O(1) time to provide parallel branches of the array.
 // #define NO_REFETCHES
+
+// no encrypt/mac on any of the containers
 #define NO_ENCRYPT
+
+// Do not re-permute the main containers, just stick with one permutation.
+// #define NO_REPERMUTE
+
+
 
 // how to examine the working area indices files on the host:
 // for f in *; do echo $f; od -t d4 -A n $f; done
@@ -161,20 +175,22 @@ ByteBuffer Array::read (index_t idx, index_t branch)
 
     index_t p_idx = _p->p(idx);
 
+    ByteBuffer buf;
+    
 #ifdef NO_REFETCHES
-    ByteBuffer obj;
-    _array_io.read (p_idx, obj);
+
+    // read straight out of the array
+    _Ts[branch]->getA()->_io.read (p_idx, buf);
     _num_retrievals++;
-    if (_num_retrievals > _max_retrievals) {
-	repermute ();
-    }
-    return obj;
-#endif
+
+#else
     
     append_new_working_item (p_idx, branch);
 
-    ByteBuffer buf = _Ts[branch]->do_dummy_accesses (p_idx,
-						     boost::none);
+    buf = _Ts[branch]->do_dummy_accesses (p_idx,
+					  boost::none);
+
+#endif
     
     if (_num_retrievals > _max_retrievals) {
 	repermute ();
@@ -196,19 +212,19 @@ void Array::write (index_t idx, size_t off,
     index_t p_idx = _p->p(idx);
 
 #ifdef NO_REFETCHES
-    _array_io.write (p_idx, val);
+
+    // write straight into the array
+    _Ts[branch]->getA()->_io.write (p_idx, val);
     _num_retrievals++;
-    if (_num_retrievals > _max_retrievals) {
-	repermute ();
-    }
-    return;
-#endif
+
+#else
     
     append_new_working_item (p_idx, branch);
-
     
     (void) _Ts[branch]->do_dummy_accesses (p_idx,
 					   std::make_pair (off, val));
+
+#endif
 
     if (_num_retrievals > _max_retrievals) {
 	repermute ();
@@ -276,7 +292,9 @@ void Array::repermute ()
 	}
     }
 #endif // NO_REFETCHES
-	
+
+    
+#ifndef NO_REPERMUTE
     // the new permutation - a range-adapted LR perm.
     shared_ptr<TwoWayPermutation> p2_
 	(new UnbalancedLRPermutation (lgN_ceil(N),
@@ -287,9 +305,11 @@ void Array::repermute ()
     shared_ptr<TwoWayPermutation> p2 (new RangeAdapterPermutation (p2_, N));
 
     repermute_As (_p, p2);
-    
-    _p = p2;
 
+    _p = p2;
+#endif
+
+    
     _num_retrievals = 0;
 }
 
@@ -429,6 +449,8 @@ Array::select (ArrayT& a, ArrayT& b, bool sel_first)
     FlatIO * selpairs[2][2] = { { &a._idxs, &b._idxs },
 				{ &a._items, &b._items } };
 
+// don't need to select on Ts if not doing re-fetching - Ts are empty in this case.
+#ifndef NO_REFETCHES
     for (unsigned i=0; i < 2; i++)
     {
 	FlatIO ** selpair = selpairs[i];
@@ -443,7 +465,8 @@ Array::select (ArrayT& a, ArrayT& b, bool sel_first)
 			boost::mpl::size_t<1>(),
 			boost::mpl::size_t<2>());
     }
-
+#endif // NO_REFETCHES
+    
     // if these T's have different A's, need to select on the A's too
     if (a.getA() != b.getA())
     {
@@ -538,7 +561,9 @@ Array::ArrayT::ArrayT (const ArrayT& b,
     }
 #endif
 
-    // need to copy the elements across
+
+#ifndef NO_REFETCHES
+    // if doing refetches, need to copy the elements across
     array<FlatIO*,2> in_ios =  { &b._idxs, &b._items };
     array<FlatIO*,2> out_ios = { &_idxs,   &_items };
 
@@ -548,6 +573,7 @@ Array::ArrayT::ArrayT (const ArrayT& b,
 		    out_ios,
 		    boost::mpl::size_t<1> (),
 		    boost::mpl::size_t<2> ());
+#endif // NO_REFETCHES
 }
 
 
@@ -597,15 +623,17 @@ find_fetch_idx (index_t rand_idx, index_t target_idx)
 		    zero_to_n (*_num_retrievals),
 		    &_idxs,
 		    NULL);
-    
-    // FIXME: why do we insist on finding a random item, even if it's not
-    // needed? Can we do without this? It probably doesnt make much difference
-    // on the time complexity, but seems unneeded.
-    
-    return prog.have_rand   ?	// the suggested rand_idx is already present in
-				// T, so need to try another one.
-	none		    :
-	( prog.have_target ? Just(rand_idx) : Just(target_idx) );
+
+    if (!prog.have_target) {
+	return Just(target_idx);
+    }
+    else if (!prog.have_rand) {
+	return Just(rand_idx);
+    }
+    else {
+	// target_idx and rand_idx both in there, try again.
+	return none;
+    }
 }
 
 
@@ -1038,6 +1066,7 @@ ArrayHandle::read (optional<index_t> idx,
     {
 	des_t desc = make_new_branch (depth);
 	
+	// recursive call
 	return _arrays[desc].read (idx, out, depth);
     }
 
@@ -1076,6 +1105,72 @@ ArrayHandle::make_new_branch (unsigned depth)
 
     return desc;
 }    
+
+
+// print an ArrayHandle's contents, in order from index 0 to N-1
+std::ostream& operator<< (std::ostream& os, ArrayHandle& arr)
+{
+    ByteBuffer buf;
+
+    os << "[";
+    
+    Array::print (os, *arr._arr, arr._branch);
+
+    os << "]";
+
+    return os;
+}
+
+// print an ArrayHandle's contents, in order from index 0 to N-1
+std::ostream&
+Array::print (std::ostream& os, Array& arr, index_t branch)
+{
+    // build a vector to indicate which elements are in T, and where in T they
+    // are.
+    std::vector<int> elem_in_T (arr.length(), -1);
+
+    assert (branch < arr._Ts.size() && arr._Ts[branch]);
+
+    ArrayT& T = * arr._Ts[branch];
+    ArrayA& A = * T.getA();
+    
+    // go though T and build the lookup table elem_in_T.
+    // _num_retrievals shows the number of active elements in T.
+    for (unsigned i=0; i < *T._num_retrievals; i++)
+    {
+	index_t idx;
+	ByteBuffer buf;
+	
+	T._idxs.read (i, buf);
+	idx = bb2basic<index_t> (buf);
+	assert (idx < elem_in_T.size());
+	elem_in_T[idx] = i;
+    }
+
+    // read all the items and print each.
+    for (unsigned i=0; i < arr.length(); i++)
+    {
+	index_t idx;
+	ByteBuffer buf;
+	
+	if (elem_in_T[i] == -1) {
+	    A._io.read (i, buf);
+	}
+	else {
+	    idx = elem_in_T[i];
+	    T._items.read (idx, buf);
+	}
+
+	os << buf;
+
+	if (i+1 < arr.length()) {
+	    os << ",";
+	}
+    }
+
+    return os;
+}
+    
 
 
 CLOSE_NS

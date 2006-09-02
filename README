@@ -12,13 +12,12 @@ eg:
 $ card_server -d containers/
 
 - generate the circuit and value containers using prep-circuit, giving it the
-dest, source and graph on stdin; call the circuit V15:
-$ { echo 3; echo 7; RandGraph sfdl < graph-V15-D5.txt; } | prep-circuit -n V15 prog.runtime
-  This connects to the running card_server, so the containers are wherever he
-  writes them.
+dest, source and graph on stdin; call the circuit V15; and encrypt the
+containers of V15 with enc-circuit, and run the circuit:
+$ { echo 3; echo 7; RandGraph sfdl < graph-V15-D5.txt; } \
+  | prep-circuit -n V15 prog.runtime && \
+  enc-circuit -n V15 && \
+  runtime -n V15
 
-- encrypt the containers of V15 with enc-circuit:
-$ enc-circuit -n V15
-
-- and finally run the circuit V15:
-$ runtime -n V15
+  All the programs connect to the running card_server, so the containers are
+  wherever he writes them.
