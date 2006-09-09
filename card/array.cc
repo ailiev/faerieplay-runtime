@@ -122,7 +122,7 @@ Array::Array (const string& name,
     }
 
     _max_retrievals = lrint (sqrt(float(N))) *  lgN_floor(N);
-    // this happens for very small N
+    // this happens for very small N (<= 16)
     if (_max_retrievals >= N) {
 	_max_retrievals = N-1;
     }
@@ -1127,6 +1127,8 @@ Array::print (std::ostream& os, Array& arr, index_t branch)
 {
     // build a vector to indicate which elements are in T, and where in T they
     // are.
+    // elem_in_T[i] =	-1	if actual element i is not in T,
+    //			T_i	if actual element i is at T[T_i]
     std::vector<int> elem_in_T (arr.length(), -1);
 
     assert (branch < arr._Ts.size() && arr._Ts[branch]);
@@ -1144,7 +1146,9 @@ Array::print (std::ostream& os, Array& arr, index_t branch)
 	T._idxs.read (i, buf);
 	idx = bb2basic<index_t> (buf);
 	assert (idx < elem_in_T.size());
-	elem_in_T[idx] = i;
+	// elem_in_T should be indexed by actual index, while the value in
+	// T._idxs is a permuted index, so apply the reverse permutation.
+	elem_in_T[ arr._p->d(idx) ] = i;
     }
 
     // read all the items and print each.
@@ -1154,14 +1158,15 @@ Array::print (std::ostream& os, Array& arr, index_t branch)
 	ByteBuffer buf;
 	
 	if (elem_in_T[i] == -1) {
-	    A._io.read (i, buf);
+	    // element is not in T, get it from A.
+	    A._io.read (arr._p->p(i), buf);
 	}
 	else {
 	    idx = elem_in_T[i];
 	    T._items.read (idx, buf);
 	}
 
-	os << buf;
+	os << "{" << buf << "}";
 
 	if (i+1 < arr.length()) {
 	    os << ",";

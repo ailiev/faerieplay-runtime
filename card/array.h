@@ -84,10 +84,15 @@ public:
 	    return N;
 	}
 
+    const std::string& name () const
+	{
+	    return _name;
+	}
+
     // almost like an operator<<, except for the branch parameter.
     static std::ostream& print (std::ostream& os,
 				Array & arr,
-				index_t branch);
+				index_t branch = 0);
     
 
     

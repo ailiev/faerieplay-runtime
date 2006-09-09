@@ -70,6 +70,38 @@ int main (int argc, char *argv[])
 
     auto_ptr<CryptoProviderFactory> prov_fact = init_crypt (g_configs);
 
+    //
+    // first do a test of printing the array out
+    //
+    const size_t PRINTTEST_LEN = 32;
+    Array printtest ("printtest-array",
+		     Just (make_pair (PRINTTEST_LEN, sizeof(int))),
+		     prov_fact.get());
+
+    for (unsigned i=0; i < PRINTTEST_LEN; i++) {
+	ByteBuffer b = basic2bb (1 << i);
+	printtest.write (i, 0, b);
+    }
+
+    // redo some of the writes to make sure that T has some elements in it.
+    for (unsigned i=0; i < PRINTTEST_LEN; i += 4) {
+	ByteBuffer b = basic2bb (1 << i);
+	printtest.write (i, 0, b);
+    }
+	
+    // and put in some of those infamous all-1 bitpatterns
+    ByteBuffer minusone = basic2bb (-1);
+    for (unsigned i=0; i < PRINTTEST_LEN; i += 4) {
+	printtest.write (i, 0, minusone);
+    }
+
+    Array::print (cout, printtest);
+    
+
+
+    //
+    // and now the write-read consistency test
+    //
     
 #include "array-test-sizes.h"
     

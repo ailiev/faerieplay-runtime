@@ -7,6 +7,8 @@
 #include <vector>
 #include <utility>
 
+#include <boost/optional/optional.hpp>
+
 //#include <pir/host/objio.h>
 #include <pir/common/utils.h>
 #include <pir/common/consts.h>
@@ -27,6 +29,8 @@ using namespace std;
 using pir::Array;
 using pir::ArrayHandle;
 
+using boost::optional;
+
 
 auto_ptr<CryptoProviderFactory> g_provfact;
 
@@ -34,6 +38,13 @@ auto_ptr<CryptoProviderFactory> g_provfact;
 int prepare_gates_container (istream & gates_in,
 			     const string& cct_name)
     throw (io_exception, std::exception);
+
+
+
+namespace {
+    Log::logger_t logger = Log::makeLogger ("prep-circuit",
+					    boost::none, boost::none);
+}
 
 
 void usage (char *argv[]) {
@@ -48,6 +59,7 @@ void usage (char *argv[]) {
 	 << VALUES_CONT << ": container with the circuit values,\n"
 	"\tinitially blank except for the inputs" << endl;
 }
+
 
 
 int main (int argc, char *argv[]) {
@@ -178,7 +190,8 @@ int prepare_gates_container (istream & gates_in,
 	    
 	    // finish off this line
 	    getline (gates_in, line);
-	    clog << "gate " << gate_num << endl;
+	    LOG (Log::DEBUG, logger,
+		 "gate " << gate_num);
 	}
 	else if (gates_in.eof()) {
 	    break;		// done
@@ -190,18 +203,21 @@ int prepare_gates_container (istream & gates_in,
 	    
 	/// and the rest of the gate lines
 	while (getline (gates_in, line) && line != "") {
-	    clog << "line: " << line << endl;
+	    LOG (Log::DEBUG, logger,
+		 "line: " << line);
 	    gate << line << endl;
 	}
 
-	clog << "gate done" << endl;
+	LOG (Log::DEBUG, logger,
+	     "gate done");
 
 	gates.push_back ( make_pair (gate_num, gate.str()) );
 	    
 	gate.str("");
     }
 	
-    clog << "Done reading circuit" << endl;
+    LOG (Log::PROGRESS, logger,
+	 "Done reading circuit");
     
 
 
@@ -215,8 +231,9 @@ int prepare_gates_container (istream & gates_in,
 	io_values   (values_cont,
 		     Just (make_pair (max_gate+1, CONTAINER_OBJ_SIZE)));
     
-    clog << "cct_cont size=" << gates.size() <<
-	"; gates_cont size=" << max_gate + 1 << endl;
+    LOG (Log::INFO, logger,
+	 "cct_cont size=" << gates.size()
+	 << "; gates_cont size=" << max_gate + 1)
 
     
     index_t i = 0;
@@ -237,7 +254,8 @@ int prepare_gates_container (istream & gates_in,
 		
 		ByteBuffer val = optBasic2bb<int> (in);
 		
-		clog << "writing " << sizeof(in) << " byte input value" << endl;
+		LOG (Log::DEBUG, logger,
+		     "writing " << sizeof(in) << " byte input value");
 		io_values.write (gate.num, val);
 	    }
 	    break;
@@ -252,40 +270,63 @@ int prepare_gates_container (istream & gates_in,
 		string arr_cont_name = gate.comment;
 
 		string in_str;
-		vector<int> ins;
 		
+		const int NUM_ELEMS = elem_size / OPT_BB_SIZE(int);
+
 		// create the Array object to use to write
 		Array arr (arr_cont_name,
 			   Just (make_pair (length, elem_size)),
 			   g_provfact.get());
 
+		assert (("Element size must be a multiple of the byte size of optional<int>",
+			 elem_size % OPT_BB_SIZE(int) == 0));
+		    
 		cerr << "Input array \"" <<  gate.comment << "\", elem size " << elem_size
 		     << endl;
 
+		    
 		// and prompt for all the values and write them in there
 		for (int l_i = 0; l_i < length; l_i++)
 		{
 
-		    // ASSUME: the array elements are all 32-bit integers. If
+		    // the 'ins' vector is just to hold several values/struct
+		    // members going into a single array element, so re-create
+		    // empty for every iteration.
+		    vector<optional<int> > ins;
+
+		    // ASSUME: the array elements are all 32-bit integers, or
+		    // structs of them. If
 		    // they're not, won't be prompting and populating the values
 		    // correctly here.
-		    for (int e_i = 0; e_i < elem_size / sizeof(int); e_i++)
+
+		    for (int e_i = 0; e_i < NUM_ELEMS; e_i++)
 		    {
 			cerr << "Elt " << l_i << " field " << e_i << ": " << flush;
+			// skip to next number
 			do
 			{}
 			while ( cin  >> in_str &&
 				(in_str.size() == 0 || in_str[0] == '#') );
 
-			ins.push_back (atoi (in_str.c_str()));
+			ins.push_back (Just (atoi (in_str.c_str())));
 		    }
 
 		    ByteBuffer ins_buf (elem_size);
-		    for (int i=0; i < elem_size / sizeof(int); i++)
+		    for (int i=0; i < NUM_ELEMS; i++)
 		    {
-			memcpy (ins_buf.data() + i*sizeof(int),
-				& ins[i],
-				sizeof(ins[i]));
+			ByteBuffer member(OPT_BB_SIZE(int));
+			makeOptBBJust (member, & (*ins[i]), sizeof (*ins[i]));
+			
+			LOG (Log::DEBUG, logger,
+			     "Writing int " << *ins[i] << ", bytebuffer " << member
+			     << " at idx " << l_i << " of array " << arr.name());
+
+			// an alias at the correct offset of ins_buf
+			ByteBuffer member_dest (ins_buf,
+						i*OPT_BB_SIZE(int),
+						OPT_BB_SIZE(int));
+			
+			bbcopy (member_dest, member);
 		    }
 
 		    // write the array value into the array container

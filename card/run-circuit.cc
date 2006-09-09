@@ -46,7 +46,7 @@ std::auto_ptr<CryptoProviderFactory> g_provfact;
 namespace {
     // print the value of a gate, whose result bytes are 'valbytes'
     std::string
-    write_value (gate_t::typ_kind_t kind, const ByteBuffer& valbytes);
+    write_value (const gate_t& gate, const ByteBuffer& valbytes);
 
     // get an array handle from an array pointer
     pir::ArrayHandle & get_array (const ByteBuffer& arr_ptr_buf);
@@ -359,7 +359,7 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	    ArrayHandle result = ArrayHandle::select (
 		arrs[0], arrs[1],
-		selector,
+		sel_first,
 		g.depth);
 
 	    res_bytes = optBasic2bb (Just (result.getDescriptor()));
@@ -500,6 +500,9 @@ void CircuitEval::do_gate (const gate_t& g)
 	elem_size = g.op.params[0];
 	len =	    g.op.params[1];
 
+	LOG (Log::DEBUG, logger,
+	     "InitDynArray len=" << len << ", elem_size=" << elem_size);
+	
 	// create a new array, give it a number and add it to the map (done
 	// internally by newArray), and write the number as the gate value
 	ArrayHandle::des_t arr_desc = ArrayHandle::newArray (g.comment,
@@ -525,12 +528,15 @@ void CircuitEval::do_gate (const gate_t& g)
     // log to the gate values log
     // Want: arrays to be logged in their entirety whereever they appear. ie.
     // no array pointers, just whole values.
-    //
+    // 
+    // NOTE: this should be kept synchronized with the formatting routines in
+    // Runtime.hs in the compiler (printOuts inside formatRun, and showsVal), so
+    // that a diff can reveal where the traces diverge.
     LOG ( Log::DEBUG, gate_logger,
 	  std::setiosflags(std::ios::left)
-	  << std::setw(6) << g.num
+	  << std::setw(14) << g.num
 //	 << std::setw(12) << (res ? itoa(*res) : "N")
-	  << write_value (g.typ.kind, res_bytes) );
+	  << write_value (g, res_bytes) );
     
     if (res_bytes.len() > 0) {
 	put_gate_val (g.num, res_bytes);
@@ -716,34 +722,38 @@ OPEN_ANON_NS
 
 
 std::string
-write_value (gate_t::typ_kind_t kind, const ByteBuffer& valbytes)
+write_value (const gate_t& g,
+	     const ByteBuffer& valbytes)
 {
     std::ostringstream os;
 
-    switch (kind) {
-    case gate_t::Scalar:
-	os << valbytes;
-	break;
-    case gate_t::Array:
+    if (g.typ.kind == gate_t::Array ||
+	g.op.kind == gate_t::ReadDynArray ||
+	g.op.kind == gate_t::WriteDynArray)
     {
 	// the first 5 bytes is the array pointer, and the rest are other
 	// values.
-	os << "(";
-
 	const ByteBuffer arr_ptr_buf (valbytes, 0, OPT_WORD_SIZE),
 	    val_rest (valbytes, OPT_WORD_SIZE, valbytes.len() - OPT_WORD_SIZE);
-	
+
+	// do not use parens if it's just one value, the array.
+// 	if (val_rest.len() > 0) {
+// 	    os << "(";
+// 	}
+
 	pir::ArrayHandle& arr = get_array (arr_ptr_buf);
 	os << arr;
 
 	if (val_rest.len() > 0) {
 	    os << "," << val_rest;
+// 	    os << ")";
 	}
 
-	os << ")";
     }
-    break;
-	
+    else
+    {
+	// a scalar
+	os << valbytes;
     }
 
     return os.str();

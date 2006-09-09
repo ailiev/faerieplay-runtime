@@ -131,6 +131,9 @@ std::ostream& operator<< (std::ostream & out, const gate_t & g);
 // uses the first byte to indicate whether the value is Just x or Nothing
 //
 
+/// how many bytes for a flat version of an optional <type>?
+#define OPT_BB_SIZE(type) (sizeof(type) + 1)
+
 template<class T>
 boost::optional<T>
 bb2optBasic (const ByteBuffer& buf)
@@ -172,6 +175,17 @@ bool isOptBBJust (const ByteBuffer& buf)
 {
     return buf.data()[0] != 0;
 }
+
+/// For a Just ByteBuffer, return its value.
+inline ByteBuffer
+getOptBBJustVal (const ByteBuffer& buf)
+{
+    assert (isOptBBJust (buf));
+
+    // return an alias ByteBuffer
+    return ByteBuffer (buf, 1, buf.len() - 1);
+}
+
 
 // set a ByteBuffer (of any size >= 1) to NIL, by setting the first byte to 0
 inline

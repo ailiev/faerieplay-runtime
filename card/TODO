@@ -1,0 +1,13 @@
+-*- text -*-
+
+<date>Fri Sep  8 22:40:28 2006</date>
+
+Sort out exaclty what bytes get returned when an array read index is out of
+bounds, and the read result is Nothing.
+
+
+<date>Sat Sep  9 19:04:05 2006</date>
+
+Ensure that Nothing values are represented as all 0-bytes, even though only the
+first byte is checked. Alternatively, just print them as all 0-bytes, so it's
+the same as the value trace from Runtime.hs
