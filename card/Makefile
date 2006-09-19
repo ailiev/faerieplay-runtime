@@ -91,6 +91,13 @@ $(EXES): -lsfdl-card
 runtime: run-circuit.o $(LDLIBFILES)
 	$(CXXLINK)
 
+enc-circuit: enc-circuit.o $(LDLIBFILES)
+	$(CXXLINK)
+
+prep-circuit: prep-circuit.o $(LDLIBFILES)
+	$(CXXLINK)
+
+
 
 $(TESTEXES): $(LIBOBJS)
 

@@ -23,9 +23,12 @@ class CircuitEval
 
 public:
 
+    /// Create an evaluator, giving it the name of a circuit created by
+    /// prep-circuit.cc
     CircuitEval (const std::string& cctname,
 		 CryptoProviderFactory * fact);
 
+    /// Evaluate the circuit!
     void eval ();
 
 
@@ -69,6 +72,8 @@ private:
     ByteBuffer get_gate_val (int gate_num);
     void put_gate_val (int gate_num, const ByteBuffer& val);
     
+    /// Log the gate value to the values log
+    void log_gate_value (const gate_t& g, const ByteBuffer& val);
     
     FlatIO
     _gates_io,			// the gates s.t. gate number g is at _gates_io[g]
@@ -83,8 +88,15 @@ public:
 
     DECL_STATIC_INIT (
 	logger = Log::makeLogger ("run-circuit");
+
+#ifdef LOGVALS
+	// since the use of gate_logger is controlled by another macro, just
+	// have it log up to a very high priority.
 	gate_logger = Log::makeLogger ("gate-logger",
-				       std::string("run-circuit-gates.log"));
+				       Just ("run-circuit-gates.log"),
+				       Just (Log::DEBUG));
+#endif
+
 	);
 };
 

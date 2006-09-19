@@ -43,3 +43,10 @@ real    0m2.365s
 user    0m0.445s
 sys     0m0.261s
 
+
+<date>Wed Sep 13 11:55:34 2006</date>
+
+How do we try to detect when NIL values are generated inappropriately? One point
+is that they should only come out of non-taken conditional branches, and then be
+propagated. If they spring out from another location, it's probably an error
+somewhere.

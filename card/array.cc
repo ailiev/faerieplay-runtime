@@ -55,7 +55,7 @@ using boost::none;
 // #define NO_REFETCHES
 
 // no encrypt/mac on any of the containers
-#define NO_ENCRYPT
+// #define NO_ENCRYPT
 
 // Do not re-permute the main containers, just stick with one permutation.
 // #define NO_REPERMUTE
@@ -1107,6 +1107,8 @@ ArrayHandle::make_new_branch (unsigned depth)
 }    
 
 
+#ifdef LOGVALS
+
 // print an ArrayHandle's contents, in order from index 0 to N-1
 std::ostream& operator<< (std::ostream& os, ArrayHandle& arr)
 {
@@ -1120,6 +1122,7 @@ std::ostream& operator<< (std::ostream& os, ArrayHandle& arr)
 
     return os;
 }
+
 
 // print an ArrayHandle's contents, in order from index 0 to N-1
 std::ostream&
@@ -1176,6 +1179,8 @@ Array::print (std::ostream& os, Array& arr, index_t branch)
     return os;
 }
     
+#endif // ifdef LOGVALS
+
 
 
 CLOSE_NS

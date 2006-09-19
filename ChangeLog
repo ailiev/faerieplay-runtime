@@ -1,3 +1,10 @@
+2006-09-19  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
+
+	* card/array.cc: Added the LOGVALS macro.
+	* card/{batcher-network.h, run-circuit.cc): tinkered the loggers.
+	* card/run-circuit.cc (log_gate_value): new, moved the logging of
+	gate values to here.
+
 2006-05-18  Sasho  <sasho@pipe.cs.dartmouth.edu>
 
 	* prep-circuit.cc: Using the Array class to write input values to

@@ -51,8 +51,10 @@ namespace {
     // get an array handle from an array pointer
     pir::ArrayHandle & get_array (const ByteBuffer& arr_ptr_buf);
 
-    // the number of bytes in a flat optional<word>
-    const size_t OPT_WORD_SIZE = 5;
+    Log::logger_t s_progress_logger = Log::makeLogger ("circuit-progress",
+						       boost::none,
+						       Just (Log::PROGRESS));
+
 }
 
 
@@ -71,7 +73,8 @@ void out_of_memory () {
     using namespace std;
     
     cerr << "Out of memory!" << endl;
-    // trigger a SEGV, so we can get a core dump	    
+    // trigger a SEGV, so we can get a core dump - useful when running on the
+    // 4758 when we can't debug interactively, but do get core dumps.	    
     // * ((int*) (0x0)) = 42;
     raise (SIGTRAP);
     throw std::bad_alloc();
@@ -87,7 +90,7 @@ static void usage (const char* progname) {
 	 << "\t[-d <crypto dir>]" << endl
 	 << "\t[-c (use 4758 crypto hw?)]" << endl
 	 << "\t[-n <circuit name>]" << endl
-	 << "Runs circuit that card_server is accessing" << endl;
+	 << "Runs named circuit (that card_server is accessing)" << endl;
 }
 
 
@@ -186,7 +189,8 @@ void CircuitEval::eval ()
     for (unsigned i=0; i < num_gates; i++) {
 
 	if (i % 100 == 0) {
-	    LOG (Log::PROGRESS, logger, "Doing gate " << i);
+	    LOG (Log::PROGRESS, s_progress_logger,
+		 "Doing gate " << i << " @" << epoch_secs());
 	}
 
 	read_gate_at_step (gate, i);
@@ -314,7 +318,7 @@ void CircuitEval::do_gate (const gate_t& g)
 
     case gate_t::Lit:
 	// place the lit value into the slot
-	res 	  = g.op.params[0]; // NOTE: this promotes an int to an optional<int>
+	res 	  = Just (g.op.params[0]);
 	res_bytes = optBasic2bb (res);
 
 	break;
@@ -524,20 +528,11 @@ void CircuitEval::do_gate (const gate_t& g)
     }
 
 
-    //
-    // log to the gate values log
-    // Want: arrays to be logged in their entirety whereever they appear. ie.
-    // no array pointers, just whole values.
-    // 
-    // NOTE: this should be kept synchronized with the formatting routines in
-    // Runtime.hs in the compiler (printOuts inside formatRun, and showsVal), so
-    // that a diff can reveal where the traces diverge.
-    LOG ( Log::DEBUG, gate_logger,
-	  std::setiosflags(std::ios::left)
-	  << std::setw(14) << g.num
-//	 << std::setw(12) << (res ? itoa(*res) : "N")
-	  << write_value (g, res_bytes) );
+#ifdef LOGVALS
+    log_gate_value (g, res_bytes);
+#endif
     
+
     if (res_bytes.len() > 0) {
 	put_gate_val (g.num, res_bytes);
     }
@@ -600,6 +595,26 @@ void CircuitEval::do_gate (const gate_t& g)
 	} // end switch (g.typ.kind)
     }
 }
+
+
+
+#ifdef LOGVALS
+void CircuitEval::log_gate_value (const gate_t& g, const ByteBuffer& val)
+{
+    //
+    // log to the gate values log
+    // 
+    // NOTE: this should be kept synchronized with the formatting routines in
+    // Runtime.hs in the compiler (printOuts inside formatRun, and showsVal), so
+    // that a text diff can reveal where the traces diverge.
+    LOG ( Log::DEBUG, gate_logger,
+	  std::setiosflags(std::ios::left)
+	  << std::setw(14) << g.num
+//	 << std::setw(12) << (res ? itoa(*res) : "N")
+	  << write_value (g, res_bytes) );
+    
+}
+#endif // LOGVALS
 
 
 
@@ -721,20 +736,27 @@ CLOSE_NS
 OPEN_ANON_NS
 
 
+#ifdef LOGVALS
+
 std::string
 write_value (const gate_t& g,
 	     const ByteBuffer& valbytes)
 {
     std::ostringstream os;
 
+    const size_t OPT_ARRDESC_SIZE = OPT_BB_SIZE(ArrayHandle::desc);
+    
     if (g.typ.kind == gate_t::Array ||
 	g.op.kind == gate_t::ReadDynArray ||
 	g.op.kind == gate_t::WriteDynArray)
     {
 	// the first 5 bytes is the array pointer, and the rest are other
 	// values.
-	const ByteBuffer arr_ptr_buf (valbytes, 0, OPT_WORD_SIZE),
-	    val_rest (valbytes, OPT_WORD_SIZE, valbytes.len() - OPT_WORD_SIZE);
+	const ByteBuffer
+	    arr_ptr_buf (valbytes, 0, OPT_ARRDESC_SIZE),
+	    val_rest (valbytes,
+		      OPT_ARRDESC_SIZE,
+		      valbytes.len() - OPT_ARRDESC_SIZE);
 
 	// do not use parens if it's just one value, the array.
 // 	if (val_rest.len() > 0) {
@@ -758,6 +780,9 @@ write_value (const gate_t& g,
 
     return os.str();
 }
+
+#endif // LOGVALS
+
 
 pir::ArrayHandle & get_array (const ByteBuffer& arr_ptr_buf)
 {

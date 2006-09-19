@@ -26,7 +26,7 @@ namespace BatcherNetwork {
 
     DECL_STATIC_INIT(logger = Log::makeLogger ("batcher-network",
 					       boost::none,
-					       Just (Log::PROGRESS)));
+					       boost::none));
 }
 
 

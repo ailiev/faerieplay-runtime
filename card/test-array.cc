@@ -73,6 +73,7 @@ int main (int argc, char *argv[])
     //
     // first do a test of printing the array out
     //
+#ifdef LOGVALS
     const size_t PRINTTEST_LEN = 32;
     Array printtest ("printtest-array",
 		     Just (make_pair (PRINTTEST_LEN, sizeof(int))),
@@ -96,7 +97,7 @@ int main (int argc, char *argv[])
     }
 
     Array::print (cout, printtest);
-    
+#endif // LOGVALS
 
 
     //
