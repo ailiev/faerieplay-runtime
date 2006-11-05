@@ -48,8 +48,7 @@ using boost::none;
 // failing.
 //
 
-// Do not do re-fetching within a retrieval session. Still copy from A to the
-// correct T, so that branches work.
+// Do not do re-fetching within a retrieval session.
 // FIXME: this does not work for now. It is not that useful anyway, as it takes
 // more than O(1) time to provide parallel branches of the array.
 // #define NO_REFETCHES
@@ -103,22 +102,19 @@ Array::Array (const string& name,
       _prov_fact	(prov_fact),
       _rand_prov	(_prov_fact->getRandProvider()),
 
-      _Ts		(1),
-      
-      _num_branches	(1),
       _num_retrievals	(0)
 
 {
 
-    shared_ptr<ArrayA> A (new ArrayA (name,
-				      size_params, &N, &_elem_size,
-				      _prov_fact));
+    _A = auto_ptr<ArrayA> (new ArrayA (name,
+				       size_params, &N, &_elem_size,
+				       _prov_fact));
 
     // if the array exists, get its sizes, and fill in the size-dependent
     // params.
     if (!size_params) {
-	N 	   = A->_io.getLen();
-	_elem_size = A->_io.getElemSize();
+	N 	   = _A->_io.getLen();
+	_elem_size = _A->_io.getElemSize();
     }
 
     _max_retrievals = lrint (sqrt(float(N))) *  lgN_floor(N);
@@ -130,36 +126,35 @@ Array::Array (const string& name,
     // init to identity permutation, and then do repermute()
     _p 		    = shared_ptr<TwoWayPermutation> (new IdPerm (N));
 
-    _Ts[0] = shared_ptr<ArrayT> (
+    _T = auto_ptr<ArrayT> (
 	new ArrayT (_name,
 		    _max_retrievals, _elem_size,
 		    &_num_retrievals,
-		    A,
 		    _prov_fact));
 }
 
 
 
-/// write a value directly to branch 0, without any permutation etc.
+/// write a value directly, without any permutation etc.
 void Array::write_clear (index_t idx, size_t off, const ByteBuffer& val)
     throw (host_exception, comm_exception)
 {
     ByteBuffer current;
 
-    _Ts[0]->getA()->_io.read (idx, current);
+    _A->_io.read (idx, current);
     
     assert (val.len() <= current.len() - off);
     
     // splice in the new value
     memcpy (current.data() + off, val.data(), val.len());
 
-    _Ts[0]->getA()->_io.write (idx, current);
+    _A->_io.write (idx, current);
 }
 
 
 
 
-ByteBuffer Array::read (index_t idx, index_t branch)
+ByteBuffer Array::read (index_t idx)
     throw (better_exception)
 {
     // need to:
@@ -171,7 +166,7 @@ ByteBuffer Array::read (index_t idx, index_t branch)
 
 
     LOG (Log::DEBUG, _logger,
-	 "Array::read idx=" << idx << "; branch=" << branch);
+	 "Array::read idx=" << idx);
 
     index_t p_idx = _p->p(idx);
 
@@ -180,15 +175,15 @@ ByteBuffer Array::read (index_t idx, index_t branch)
 #ifdef NO_REFETCHES
 
     // read straight out of the array
-    _Ts[branch]->getA()->_io.read (p_idx, buf);
+    _A->_io.read (p_idx, buf);
     _num_retrievals++;
 
 #else
     
-    append_new_working_item (p_idx, branch);
+    append_new_working_item (p_idx);
 
-    buf = _Ts[branch]->do_dummy_accesses (p_idx,
-					  boost::none);
+    buf = _T->do_dummy_accesses (p_idx,
+				 boost::none);
 
 #endif
     
@@ -201,28 +196,27 @@ ByteBuffer Array::read (index_t idx, index_t branch)
 
 
 void Array::write (index_t idx, size_t off,
-		   const ByteBuffer& val,
-		   index_t branch)
+		   const ByteBuffer& val)
     throw (better_exception)
 {
     
     LOG (Log::DEBUG, _logger,
-	 "Array::write idx=" << idx << "; branch=" << branch);
+	 "Array::write idx=" << idx);
     
     index_t p_idx = _p->p(idx);
 
 #ifdef NO_REFETCHES
 
     // write straight into the array
-    _Ts[branch]->getA()->_io.write (p_idx, val);
+    _A->_io.write (p_idx, val);
     _num_retrievals++;
 
 #else
     
-    append_new_working_item (p_idx, branch);
+    append_new_working_item (p_idx);
     
-    (void) _Ts[branch]->do_dummy_accesses (p_idx,
-					   std::make_pair (off, val));
+    (void) _T->do_dummy_accesses (p_idx,
+				  std::make_pair (off, val));
 
 #endif
 
@@ -233,64 +227,16 @@ void Array::write (index_t idx, size_t off,
 
 
 
-/// do a select operation, and return the branch index of the result.
-/// @param sel_first if true select the first branch, if false the second one.
-index_t
-Array::select (index_t a, index_t b, bool sel_first)
-{
-    LOG (Log::DEBUG, _logger,
-	 "Array::select on branches " << a << " and " << b
-	 << " with sel_first = " << sel_first);
-    
-    if ( !_Ts[a] || !_Ts[b] )
-    {
-	throw illegal_operation_argument ("select on non-existant arrays " +
-					  itoa(a) + ", " + itoa(b));
-    }
-    
-    index_t
-	sel   = sel_first ? a : b,
-	unsel = sel_first ? b : a;
-    
-    select (*_Ts[a], *_Ts[b], sel_first);
-// TODO: dont discard unselected!!
-    _Ts[unsel]      = shared_ptr<ArrayT> (); // set to an empty shared_ptr
-    
-    return sel;
-}
-
-
-
-
 void Array::repermute ()
 {
     LOG (Log::PROGRESS, _logger,
 	 "Array::repermute() on array " << _name
 	 << ", " << N  << " elems");
     
-    // duplicate all the A's which have corresponding T's
-	
-    FOREACH (T, _Ts) {
-	if (*T) {
-	    if (! (*T)->hasUniqueA())
-	    {
-		LOG (Log::DEBUG, _logger,
-		     "duplicating the A of T branch " << (*T)->_branch);
-		
-		(*T)->duplicateA();
-	    }
-	}
-    }
-
 
 #ifndef NO_REFETCHES
     // copy values out of the working areas and into their main array
-    FOREACH (T, _Ts) {
-	if (*T)
-	{
-	    merge (* *T, * (*T)->getA());
-	}
-    }
+    merge (*_T, *_A);
 #endif // NO_REFETCHES
 
     
@@ -304,7 +250,7 @@ void Array::repermute ()
 
     shared_ptr<TwoWayPermutation> p2 (new RangeAdapterPermutation (p2_, N));
 
-    repermute_As (_p, p2);
+    _A->repermute (_p, p2);
 
     _p = p2;
 #endif
@@ -314,40 +260,13 @@ void Array::repermute ()
 }
 
 
-// make a new branch and return its index
-index_t
-Array::newBranch (index_t source_branch)
-{
-    if (source_branch >= _Ts.size() || !_Ts[source_branch])
-    {
-	throw illegal_operation_argument (
-	    "Array::newBranch: non-existent array branch requested");
-    }
-	
-
-    // find the first free branch, or push a new one one if no free one
-    unsigned b;
-    for (b=0; b < _Ts.size() && _Ts[b]; b++)
-	;
-    if (b == _Ts.size())
-    {
-	_Ts.resize (_Ts.size()+1);
-    }
-	
-    // duplicate the T
-    _Ts[b] = _Ts[source_branch]->duplicate (b);
-
-    return b;
-}
-    
-
 
 
 /// add a new distinct element to T:  either idx or a random
 /// index (not already in T).
 ///
 /// working with physical indices here
-void Array::append_new_working_item (index_t idx, index_t branch)
+void Array::append_new_working_item (index_t idx)
     throw (better_exception)
 {
     index_t rand_idx;
@@ -360,26 +279,14 @@ void Array::append_new_working_item (index_t idx, index_t branch)
 	LOG (Log::DEBUG, _logger,
 	     "While accessing physical idx " << idx
 	     << ", trying rand_idx " << rand_idx);
-	to_append = _Ts[branch]->find_fetch_idx (rand_idx, idx);
+	to_append = _T->find_fetch_idx (rand_idx, idx);
     }
 
 
     ByteBuffer obj;
-    // append the corresponding item to *each* T.
-    // REASON: maintain invariant that each i in A is touched 0 or 1 times in a
-    // session.
-    // FIXME: actually this is not true, each i could be read between 0 and #T's
-    // times, though that number is visible to the adversary, determined by the
-    // code/circuit.
-    FOREACH (T, _Ts) {
-	if (*T)
-	{
-	    ArrayA &  arr = * (*T)->getA();
-	    arr._io.read (*to_append, obj);
-	    
-	    (*T)->appendItem (*to_append, obj);
-	}
-    }
+    // append the corresponding item to T.
+    _A->_io.read (*to_append, obj);
+    _T->appendItem (*to_append, obj);
 	
     _num_retrievals++;
 }
@@ -404,94 +311,6 @@ Array::merge (const ArrayT& T, ArrayA& A)
 
 
 
-void Array::repermute_As(const shared_ptr<TwoWayPermutation>& old_p,
-			 const shared_ptr<TwoWayPermutation>& new_p)
-{
-    LOG (Log::DEBUG, _logger,
-	 "Array::repermute_As() called");
-    
-    // at this point, any "aliased" A's (with more than one T) will have been
-    // duplicated, so every T has a unique A, so we can just iterate over the
-    // T's
-    FOREACH (T, _Ts) {
-	if (*T) (*T)->getA()->repermute (old_p, new_p);
-    }
-}
-
-
-// stream program to select one of two I/O streams. The output only goes into
-// the first stream, the second output is not used and can be set to NULL.
-struct selector_prog
-{
-    selector_prog (bool sel_first)
-	: sel_first (sel_first)
-	{}
-    
-    void operator() (const array<index_t,2>&,
-		     const array<ByteBuffer,2> & in,
-		     array<ByteBuffer,2> & out) const
-	{
-	    out[0] = sel_first ? in[0] : in[1];
-	    // out[1] is not used
-	}
-
-    bool sel_first;
-};
-		
-
-// select the specified T, updating it in place
-void
-Array::select (ArrayT& a, ArrayT& b, bool sel_first)
-{
-    LOG (Log::DEBUG, _logger,
-	 "Array::select(T) called");
-    
-    FlatIO * selpairs[2][2] = { { &a._idxs, &b._idxs },
-				{ &a._items, &b._items } };
-
-// don't need to select on Ts if not doing re-fetching - Ts are empty in this case.
-#ifndef NO_REFETCHES
-    for (unsigned i=0; i < 2; i++)
-    {
-	FlatIO ** selpair = selpairs[i];
-	
-	array<FlatIO*,2> in_ios =  { selpair[0], selpair[1] };
-	array<FlatIO*,2> out_ios = { sel_first ? selpair[0] : selpair[1], NULL };
-	
-	stream_process (selector_prog (sel_first),
-			zero_to_n<2> (*a._num_retrievals),
-			in_ios,
-			out_ios,
-			boost::mpl::size_t<1>(),
-			boost::mpl::size_t<2>());
-    }
-#endif // NO_REFETCHES
-    
-    // if these T's have different A's, need to select on the A's too
-    if (a.getA() != b.getA())
-    {
-	select (*a.getA(), *b.getA(), sel_first);
-    }
-}
-
-
-// select the specified A, updating it in place
-void
-Array::select (ArrayA& a, ArrayA& b, bool sel_first)
-{
-    array<FlatIO*,2> in_ios =  { &a._io, &b._io };
-    array<FlatIO*,2> out_ios = { sel_first ? &a._io : &b._io, NULL };
-
-    stream_process (selector_prog (sel_first),
-		    zero_to_n<2> (*a.N),
-		    in_ios,
-		    out_ios,
-		    boost::mpl::size_t<1>(),
-		    boost::mpl::size_t<2>());
-}
-
-
-
 
 
 //
@@ -504,14 +323,11 @@ Array::ArrayT::ArrayT (const std::string& name, /// the array name
 		       size_t max_retrievals,
 		       size_t elem_size,
 		       const size_t * p_num_retrievals,
-		       const shared_ptr<ArrayA>& A,
 		       CryptoProviderFactory * prov_fact)
     : _name		(name),
-      _branch		(0),
-      _A		(A),
-      _idxs		(_name + DIRSEP + "touched" + DIRSEP + "branch-0-idxs",
+      _idxs		(_name + DIRSEP + "touched-idxs",
 			 Just (std::make_pair (max_retrievals, sizeof(index_t)))),
-      _items		(_name + DIRSEP + "touched" + DIRSEP + "branch-0-items",
+      _items		(_name + DIRSEP + "touched-items",
 			 Just (make_pair (max_retrievals, elem_size))),
       _num_retrievals	(p_num_retrievals),
       _prov_fact	(prov_fact)
@@ -530,51 +346,6 @@ Array::ArrayT::ArrayT (const std::string& name, /// the array name
 }
 
 
-
-Array::ArrayT::ArrayT (const ArrayT& b,
-		       unsigned branch) // this will be the b-th branch
-
-    : _name		(b._name),
-      _branch		(branch),
-      _A		(b._A),
-      _idxs		(_name + DIRSEP + "touched" + DIRSEP + "branch-" +
-			 itoa(branch) + "-idxs",
-			 Just (make_pair (b._idxs.getLen(),
-					  b._idxs.getElemSize()))),
-      _items		(_name + DIRSEP + "touched" + DIRSEP + "branch-" +
-			 itoa(branch) + "-items",
-			 Just (make_pair (b._items.getLen(),
-					  b._items.getElemSize()))),
-      _num_retrievals	(b._num_retrievals),
-      _prov_fact	(b._prov_fact)
-{
-#ifndef NO_ENCRYPT
-    // add encrypt/decrypt filters to all the IO objects.
-    FlatIO * ios [] = { &_idxs, &_items };
-    for (unsigned i=0; i < ARRLEN(ios); i++)
-    {
-	ios[i]->appendFilter (
-	    auto_ptr<HostIOFilter>
-	    (new IOFilterEncrypt (ios[i],
-				  shared_ptr<SymWrapper>
-				  (new SymWrapper (_prov_fact)))));
-    }
-#endif
-
-
-#ifndef NO_REFETCHES
-    // if doing refetches, need to copy the elements across
-    array<FlatIO*,2> in_ios =  { &b._idxs, &b._items };
-    array<FlatIO*,2> out_ios = { &_idxs,   &_items };
-
-    stream_process (identity_itemproc<2>(),
-		    zero_to_n<2> (*_num_retrievals),
-		    in_ios,
-		    out_ios,
-		    boost::mpl::size_t<1> (),
-		    boost::mpl::size_t<2> ());
-#endif // NO_REFETCHES
-}
 
 
 
@@ -751,21 +522,6 @@ appendItem (index_t idx, const ByteBuffer& item)
     _items.write (*_num_retrievals, item);
 }
 
-shared_ptr<Array::ArrayT>
-Array::ArrayT::
-duplicate (index_t new_branch)
-{
-    return shared_ptr<ArrayT> (new ArrayT (*this, new_branch));
-}
-
-
-void
-Array::ArrayT::duplicateA()
-{
-    assert (! _A.unique());
-
-    _A = _A->duplicate(_branch);
-}
 
 
 
@@ -775,9 +531,6 @@ Array::ArrayT::duplicateA()
 //
 
 
-// instantiate static member
-unsigned Array::ArrayA::_counter = 0;
-
 
 Array::ArrayA::ArrayA (const std::string& name, /// the array name
 		       const optional<pair<size_t, size_t> >& size_params,
@@ -785,7 +538,7 @@ Array::ArrayA::ArrayA (const std::string& name, /// the array name
 		       const size_t * elem_size,
 		       CryptoProviderFactory *  prov_fact)
     : _name	    (name + DIRSEP + "array"),
-      _io	    (_name + "-b0", size_params),
+      _io	    (_name, size_params),
       N		    (N),
       _elem_size    (elem_size),
       _prov_fact    (prov_fact)
@@ -812,42 +565,6 @@ Array::ArrayA::ArrayA (const std::string& name, /// the array name
 }
 
 
-/// make a duplicate of ArrayA b, at the specified branch index.
-/// Called only from ArrayA::duplicate().
-Array::ArrayA::ArrayA (const ArrayA& b, unsigned branch)
-    : _name	    (b._name),
-      _io	    (_name + "-b" + itoa(branch) + "-" + itoa(_counter++),
-		     Just (make_pair (b._io.getLen(),
-				      b._io.getElemSize()))),
-      N		    (b.N),
-      _elem_size    (b._elem_size),
-      _prov_fact    (b._prov_fact)
-{
-#ifndef NO_ENCRYPT
-    // add encrypt/decrypt filter.
-    _io.appendFilter (
-	auto_ptr<HostIOFilter>
-	(new IOFilterEncrypt (&_io,
-			      shared_ptr<SymWrapper>
-			      (new SymWrapper (_prov_fact)))));
-#endif // NO_ENCRYPT
-    
-    // copy the values across
-    stream_process (identity_itemproc<>(),
-		    zero_to_n (*N),
-		    &b._io,
-		    &_io);
-}
-
-
-/// duplicate this ArrayA for a new branch
-/// @param branch the new branch index, just given for container name
-/// choice
-shared_ptr<Array::ArrayA>
-Array::ArrayA::duplicate(index_t branch)
-{
-    return shared_ptr<ArrayA> (new ArrayA (*this, branch));
-}
 
 
 void
@@ -891,39 +608,36 @@ Array::ArrayA::repermute (const shared_ptr<TwoWayPermutation>& old_p,
 
 
 
-//
-// class ArrayHandle
-//
+// ********************
+/// \section s3456 class ArrayHandle
+// ********************
 
 ArrayHandle::des_t ArrayHandle::newArray (const std::string& name,
 					  size_t len, size_t elem_size,
-					  CryptoProviderFactory * crypt_fact,
-					  unsigned depth)
+					  CryptoProviderFactory * crypt_fact)
     throw (better_exception)
 {
     shared_ptr<Array> arrptr (new Array (name,
 					 Just (std::make_pair (len, elem_size)),
 					 crypt_fact));
 
-    return insert_arr (arrptr, depth);
+    return insert_arr (arrptr);
 }
 
 ArrayHandle::des_t ArrayHandle::newArray (const std::string& name,
-					  CryptoProviderFactory * crypt_fact,
-					  unsigned depth)
+					  CryptoProviderFactory * crypt_fact)
     throw (better_exception)
 {
     shared_ptr<Array> arrptr (new Array (name,
 					 none,
 					 crypt_fact));
 
-    return insert_arr (arrptr, depth);
+    return insert_arr (arrptr);
 }
 
 
 ArrayHandle::des_t
-ArrayHandle::insert_arr (const boost::shared_ptr<Array>& arr,
-			 unsigned depth)
+ArrayHandle::insert_arr (const boost::shared_ptr<Array>& arr)
 {
     des_t desc = _next_array_num++;
 
@@ -931,7 +645,7 @@ ArrayHandle::insert_arr (const boost::shared_ptr<Array>& arr,
 //    assert (_arrays.find(idx) == _arrays.end() );
     
     _arrays.insert (make_pair (desc,
-			       ArrayHandle (arr, 0, depth, desc))); // branch 0
+			       ArrayHandle (arr, desc)));
 
     return desc;
 }    
@@ -951,96 +665,32 @@ ArrayHandle::getArray (ArrayHandle::des_t desc)
 }
 
 
-/// do a select operation, and return the handle of the result.
-/// @param sel_first if true select the first array, if false the second one.
-ArrayHandle &
-ArrayHandle::select (ArrayHandle& a,
-		     ArrayHandle& b,
-		     bool sel_first,
-		     unsigned depth)
-{
-    // we'll actually work with these
-    ArrayHandle *h1 = &a,
-	*h2 = &b;
 
-    LOG (Log::DEBUG, Array::_logger,
-	 "Selecting array descs " << a._desc << "," << b._desc);
-    
-    // make a new copy of one of the handles if needed, should not be needed for both.
-    assert (! (depth > h1->_last_depth && depth > h2->_last_depth) );
-    
-    if (depth > h1->_last_depth) {
-	h1 = & _arrays[ h1->make_new_branch (depth) ];
-    }
-    else if (depth > h2->_last_depth) {
-	h2 = & _arrays[ h2->make_new_branch (depth) ];
-    }
-    
 
-    // the two Array objects should be the same. shared_ptr compares pointer
-    // values as needed.
-    if (h1->_arr != h2->_arr)
-    {
-	throw illegal_operation_argument ("select array on different arrays");
-    }
-
-    shared_ptr<Array> & arr = h1->_arr;
-
-    
-    // Do the Select
-    index_t sel_branch = arr->select (h1->_branch, h2->_branch, sel_first);
-
-    // toss the two old handles
-    _arrays.erase (h1->_desc);
-    _arrays.erase (h2->_desc);
-    
-    des_t desc = _next_array_num++;
-
-    LOG (Log::DEBUG, Array::_logger,
-	 "Erasing arr desc " << h1->_desc
-	 << " and arr desc " << h2->_desc
-	 << ", inserting arr desc " << desc);
-
-    ArrayHandle newh (arr, sel_branch, depth, desc);
-    _arrays.insert (make_pair (desc, newh));
-
-    return _arrays[desc];
-}
-
-// NOTE: may get an out-of-range index here, but still may need to generate a
-// new array branch.
 ArrayHandle &
 ArrayHandle::write (optional<index_t> idx, size_t off,
-		    const ByteBuffer& val,
-		    unsigned depth)
+		    const ByteBuffer& val)
     throw (better_exception)
 {
     LOG (Log::DEBUG, Array::_logger,
 	 "Write on desc " << _desc);
     
-    if (depth > _last_depth)
-    {
-	des_t desc = make_new_branch (depth);
-
-	// recursive call
-	return _arrays[desc].write(idx, off, val, depth);
-    }
-
 
     if (!idx) {
 	// no write
+	// FIXME: need to concoct a dummy write here! cannot just return.
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::write() got a null index");
 	return *this;
     }
     else if (*idx < 0 || *idx >= length()) {
-	// no write
+	// FIXME: as above
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::write() got a outside-bounds index " << *idx);
 	return *this;
     }
 
-    _arr->write (*idx, off, val, _branch);
+    _arr->write (*idx, off, val);
     return *this;
 }
 
@@ -1049,62 +699,36 @@ ArrayHandle::write (optional<index_t> idx, size_t off,
 /// Encapsulates all the re-fetching and permuting, etc.
 /// @param i the index to read
 /// @param out the ByteBuffer with the value read out.
-/// @param depth the conditional depth of this operation.
 /// @return a (potentially new) ArrayHandle which should get subsequent reads to
-/// that array branch. a new ArrayHandle is produced if this is a deeper
-/// conditional depth.
+/// that array branch. For now, the returned handle is always identical to the
+/// passed-in one.
 ArrayHandle &
 ArrayHandle::read (optional<index_t> idx,
-		   ByteBuffer & out,
-		   unsigned depth)
+		   ByteBuffer & out)
     throw (better_exception)
 {
     LOG (Log::DEBUG, Array::_logger,
 	 "Read on desc " << _desc);
 
-    if (depth > _last_depth)
-    {
-	des_t desc = make_new_branch (depth);
-	
-	// recursive call
-	return _arrays[desc].read (idx, out, depth);
-    }
-
     
     if (!idx) {
-	// no read
+	// FIXME: concoct a read here, and return NIL probably
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::read() got a null index");
 	return *this;
     }
     else if (*idx < 0 || *idx >= length()) {
-	// no read
+	// FIXME: as above
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::read() got a outside-bounds index " << *idx);
 	return *this;
     }
 
-    
-    out = _arr->read (*idx, _branch);
+    out = _arr->read (*idx);
 
     return *this;
 }
 
-
-ArrayHandle::des_t
-ArrayHandle::make_new_branch (unsigned depth)
-{
-    index_t new_branch;
-
-    new_branch = _arr->newBranch (_branch);
-
-    // add a new Handle with this branch number to the map
-    des_t desc = _next_array_num++;
-    ArrayHandle newh (_arr, new_branch, depth, desc);
-    _arrays.insert (make_pair (desc, newh));
-
-    return desc;
-}    
 
 
 #ifdef LOGVALS
@@ -1116,7 +740,7 @@ std::ostream& operator<< (std::ostream& os, ArrayHandle& arr)
 
     os << "[";
     
-    Array::print (os, *arr._arr, arr._branch);
+    Array::print (os, *arr._arr);
 
     os << "]";
 
@@ -1126,7 +750,7 @@ std::ostream& operator<< (std::ostream& os, ArrayHandle& arr)
 
 // print an ArrayHandle's contents, in order from index 0 to N-1
 std::ostream&
-Array::print (std::ostream& os, Array& arr, index_t branch)
+Array::print (std::ostream& os, Array& arr)
 {
     // build a vector to indicate which elements are in T, and where in T they
     // are.
@@ -1134,10 +758,8 @@ Array::print (std::ostream& os, Array& arr, index_t branch)
     //			T_i	if actual element i is at T[T_i]
     std::vector<int> elem_in_T (arr.length(), -1);
 
-    assert (branch < arr._Ts.size() && arr._Ts[branch]);
-
-    ArrayT& T = * arr._Ts[branch];
-    ArrayA& A = * T.getA();
+    ArrayT& T = * arr._T;
+    ArrayA& A = * arr._A;
     
     // go though T and build the lookup table elem_in_T.
     // _num_retrievals shows the number of active elements in T.

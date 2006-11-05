@@ -1,3 +1,9 @@
+2006-11-05  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
+
+	* card/array.cc, card/run-circuit.cc: Removed all the array
+	branching stuff, as well as all depth stuff (which was only used
+	for array branching).
+
 2006-09-19  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
 
 	* card/array.cc: Added the LOGVALS macro.

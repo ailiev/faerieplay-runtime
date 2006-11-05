@@ -1,3 +1,5 @@
+include ../pir/utils.make
+
 SUBDIRS = common card # host
 
 subdirs: $(SUBDIRS)

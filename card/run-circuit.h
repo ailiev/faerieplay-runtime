@@ -53,7 +53,6 @@ private:
     /// @return the descriptor of the resulting array
     ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
 			      boost::optional<index_t> idx,
-			      unsigned prev_depth, unsigned depth,
 			      ByteBuffer & o_val);
 
     /// @return the descriptot of the resulting array
@@ -61,8 +60,7 @@ private:
 			       size_t off,
 			       boost::optional<size_t> len,
 			       boost::optional<index_t> idx,
-			       const ByteBuffer& new_val,
-			       unsigned prev_depth, unsigned this_depth);
+			       const ByteBuffer& new_val);
 
     /// get the current value at this gate's output
     boost::optional<int> get_int_val (int gate_num);

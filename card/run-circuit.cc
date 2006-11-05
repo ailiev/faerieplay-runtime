@@ -293,8 +293,7 @@ void CircuitEval::do_gate (const gate_t& g)
 	    string arr_cont_name = g.comment;
 
 	    ArrayHandle::des_t arr_ptr = ArrayHandle::newArray (arr_cont_name,
-								_prov_fact,
-								g.depth);
+								_prov_fact);
 
 	    // for the logging
 	    res = arr_ptr;
@@ -333,6 +332,9 @@ void CircuitEval::do_gate (const gate_t& g)
 	bool sel_first;
 
 	assert (g.inputs.size() == 3);
+	// we do not select on arrays now.
+	assert (g.typ.kind != gate_t::Array);
+
 	selector = get_int_val (g.inputs[0]);
 	
 	// treat a Nothing selector as False
@@ -343,37 +345,8 @@ void CircuitEval::do_gate (const gate_t& g)
 	    input_vals[i] = get_gate_val (g.inputs[i+1]);
 	}
 
-
-	if (g.typ.kind == gate_t::Array)
-	{
-	    // this is a bit longer, as array selection involved reading through
-	    // both arrays to hide which one is selected. hence handled by the
-	    // Array code
-	    
-	    optional<ArrayHandle::des_t> descs [] = {
-		bb2optBasic<ArrayHandle::des_t> (input_vals[0]),
-		bb2optBasic<ArrayHandle::des_t> (input_vals[1])
-	    };
-	    
-	    assert (("Cannot select on a Nothing array handle",
-		     descs[0] && descs[1]));
-	    
-	    ArrayHandle arrs[] = { ArrayHandle::getArray (*descs[0]),
-				   ArrayHandle::getArray (*descs[1]) };
-
-	    ArrayHandle result = ArrayHandle::select (
-		arrs[0], arrs[1],
-		sel_first,
-		g.depth);
-
-	    res_bytes = optBasic2bb (Just (result.getDescriptor()));
-	    
-	}
-	else if (g.typ.kind == gate_t::Scalar)
-	{
-	    // simple!
-	    res_bytes = sel_first  ? input_vals[0] : input_vals[1];
-	}
+	// simple!
+	res_bytes = sel_first  ? input_vals[0] : input_vals[1];
     }	
     break;
 
@@ -384,15 +357,8 @@ void CircuitEval::do_gate (const gate_t& g)
 	ByteBuffer arr_ptr = get_gate_val (arr_gate_num);
 	optional<index_t> idx = static_cast<optional<index_t> > (get_int_val (g.inputs[1]));
 	
-	// read in the whole gate where the array came from to see what depth it
-	// was at
-	gate_t arr_val_gate;
-	read_gate (arr_val_gate, arr_gate_num);
-	
 	ByteBuffer val;
-	ByteBuffer arr2 = do_read_array (arr_ptr, idx,
-					 arr_val_gate.depth, g.depth,
-					 val);
+	ByteBuffer arr2 = do_read_array (arr_ptr, idx, val);
 
 	ByteBuffer outs [] = { arr2, val };
 	res_bytes = concat_bufs (outs, outs + ARRLEN(outs));
@@ -425,17 +391,12 @@ void CircuitEval::do_gate (const gate_t& g)
 	// concatenate the inputs
 	ByteBuffer ins = concat_bufs (vals.begin(), vals.end());
 
-	// read in the whole array source gate to see what depth it was at
-	gate_t arr_val_gate;
-	read_gate (arr_val_gate, arr_gate_num);
-
 	ByteBuffer arr_desc2 = do_write_array (
 	    arr_ptr,
 	    off,
 	    len >= 0 ? Just((size_t)len) : none,			
 	    idx,
-	    ins,
-	    arr_val_gate.depth, g.depth);
+	    ins);
 
 	// return the array pointer
 	res_bytes = arr_desc2;
@@ -511,8 +472,7 @@ void CircuitEval::do_gate (const gate_t& g)
 	// internally by newArray), and write the number as the gate value
 	ArrayHandle::des_t arr_desc = ArrayHandle::newArray (g.comment,
 							     len, elem_size,
-							     g_provfact.get(),
-							     g.depth);
+							     g_provfact.get());
 
 	
 	res_bytes = optBasic2bb (Just (arr_desc));
@@ -578,7 +538,7 @@ void CircuitEval::do_gate (const gate_t& g)
 		      << " of " << arr.length() << " elements:" << std::endl;
 	    for (unsigned i=0; i < arr.length(); i++)
 	    {
-		(void) arr.read (i, buf, g.depth);
+		(void) arr.read (i, buf);
 		// FIXME: this is converting to integers, not very general.
 		int_val = bb2optBasic<int> (buf);
 		if (!int_val) {
@@ -668,16 +628,13 @@ string CircuitEval::get_string_val (int gate_num)
 
 ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
 				       optional<index_t> idx,
-				       unsigned prev_depth, unsigned depth,
 				       ByteBuffer & o_val)
 {
     optional<ArrayHandle::des_t> null;
     
     ArrayHandle & arr = get_array (arr_ptr);
 
-    arr.setLastDepth (prev_depth);
-
-    ArrayHandle & arr2 = arr.read (idx, o_val, depth);
+    ArrayHandle & arr2 = arr.read (idx, o_val);
     
     return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }
@@ -687,22 +644,19 @@ ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
 					size_t off,
 					optional<size_t> len,
 					optional<index_t> idx,
-					const ByteBuffer& new_val,
-					unsigned prev_depth, unsigned this_depth)
+					const ByteBuffer& new_val)
     
 {
     optional<ArrayHandle::des_t> desc, null;
     
     ArrayHandle & arr = get_array (arr_ptr_buf);
     
-    arr.setLastDepth (prev_depth);
-
     if (len)
     {
 	assert (*len == new_val.len());
     }
     
-    ArrayHandle & arr2 = arr.write (idx, off, new_val, this_depth);
+    ArrayHandle & arr2 = arr.write (idx, off, new_val);
 
     return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }

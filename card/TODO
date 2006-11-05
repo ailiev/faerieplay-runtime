@@ -11,3 +11,11 @@ bounds, and the read result is Nothing.
 Ensure that Nothing values are represented as all 0-bytes, even though only the
 first byte is checked. Alternatively, just print them as all 0-bytes, so it's
 the same as the value trace from Runtime.hs
+
+
+<date>Wed Oct 11 16:36:04 2006</date>
+
+Ensure that nil indices are not revealed! Ie. need to read or write *something*
+even if the index is nil. Just using i=0 and ensuring that a write uses the old
+value seems enough.
+

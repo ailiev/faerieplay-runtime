@@ -45,33 +45,23 @@ public:
     /// @param off the offset in bytes within that index, where we place the new
     /// value
     void write (index_t idx, size_t off,
-                const ByteBuffer& val,
-		index_t branch = 0)
+                const ByteBuffer& val)
         throw (better_exception);
 
     /// Read the value from an array index.
     /// Encapsulates all the re-fetching and permuting, etc.
     /// @param idx the index
     /// @return new ByteBuffer with the value
-    ByteBuffer read (index_t i,
-		     index_t branch = 0)
+    ByteBuffer read (index_t i)
 	throw (better_exception);
 
-    // make a new branch and return its index
-    index_t newBranch (index_t source_branch);
-
-    /// do a select operation, and return the branch index of the result.
-    /// 
-    /// @param sel_first if true select the first branch, if false the second
-    /// one.
-    index_t select (index_t a, index_t b, bool sel_first);
     
     /// Write a value non-hidden, probably during initialization
     void write_clear (index_t i, size_t off, const ByteBuffer& val)
  	throw (host_exception, comm_exception);
 
     /// Read a value without index protection and with minimal effort.
-    ByteBuffer read_clear (index_t i, index_t branch=0)
+    ByteBuffer read_clear (index_t i)
 	throw (better_exception);
     
     
@@ -89,10 +79,9 @@ public:
 	    return _name;
 	}
 
-    // almost like an operator<<, except for the branch parameter.
+    // almost like an operator<<
     static std::ostream& print (std::ostream& os,
-				Array & arr,
-				index_t branch = 0);
+				Array & arr);
     
 
     
@@ -112,18 +101,12 @@ private:
 	repermute (const boost::shared_ptr<TwoWayPermutation>& old_p,
 		   const boost::shared_ptr<TwoWayPermutation>& new_p);
 
-	/// duplicate this ArrayA for a new branch
-	/// @param branch the new branch index, just given for container name
-	/// choice
-	boost::shared_ptr<ArrayA> duplicate(index_t branch);
-
 	friend class Array;
 	
     private:
 	// used by duplicate()
-	ArrayA (const ArrayA& b, // the source ArrayA
-		unsigned branch); // this is the b-th branch (for naming
-	                          // purposes)
+	ArrayA (const ArrayA& b); // the source ArrayA
+
 
 	std::string _name;	// the array name
 	
@@ -134,8 +117,6 @@ private:
 
 	CryptoProviderFactory * _prov_fact;
 
-	// use this to generate unique names
-	static unsigned _counter;
     };
 
 
@@ -143,12 +124,10 @@ private:
     class ArrayT
     {
     public:
-	/// used when creating the first T for an unbranched array.
 	ArrayT (const std::string& name, /// the array name
 		size_t max_retrievals,
 		size_t elem_size,
 		const size_t * p_num_retrievals,
-		const boost::shared_ptr<ArrayA>& A,
 		CryptoProviderFactory * prov_fact);
 
 	/// @return the index to fetch into T. none if rand_idx is already in
@@ -165,20 +144,6 @@ private:
 
 	void appendItem (index_t idx, const ByteBuffer& item);
 
-	// called when a new branch is to be created.
-	// new_branch is just provided to enable useful naming of the container.
-	boost::shared_ptr<ArrayT> duplicate (index_t new_branch);
-
-	boost::shared_ptr<ArrayA> & getA ()
-	    { return _A; }
-
-	/// duplicate our A so it is unique.
-	/// \pre our #_A is not unique (or there would be no need to duplicate
-	/// it).
-	void duplicateA ();
-
-	bool hasUniqueA()
-	    { return _A.unique(); }
 
 	class dummy_fetches_stream_prog;
 	friend class dummy_fetches_stream_prog;
@@ -188,16 +153,8 @@ private:
 	
     private:
 
-	// used by duplicate()
-	ArrayT (const ArrayT& b, unsigned branch);
-	
-
-
 	std::string _name;
-	index_t _branch;	// our branch number
 
-	boost::shared_ptr<ArrayA> _A; // the A we're working with
-	
 	mutable FlatIO
 	_idxs,			// this is the physical (ie. permuted) index
 				// of the item
@@ -214,27 +171,13 @@ private:
 
     
 
-
-    // the selection routines
-
-    // select the specified T, updating it in place
-    static void
-    select (ArrayT& a, ArrayT& b, bool sel_first);
-
-    // and for A's
-    static void
-    select (ArrayA& a, ArrayA& b, bool sel_first);
-
     /// merge a T into an A
     static void
     merge (const ArrayT& t, ArrayA& a);
 	
 
-    void repermute_As(const boost::shared_ptr<TwoWayPermutation>& old_p,
-		      const boost::shared_ptr<TwoWayPermutation>& new_p);
-
-    /// append a new distinct object (and its index) to the T at 'branch'.
-    void append_new_working_item (index_t idx, index_t branch)
+    /// append a new distinct object (and its index) to T.
+    void append_new_working_item (index_t idx)
 	throw (better_exception);
 
     
@@ -262,10 +205,8 @@ private:
     // Shuffler expects.
     boost::shared_ptr<TwoWayPermutation>   _p;
 
-    std::vector<boost::shared_ptr<ArrayT> > _Ts;
-//    std::vector<boost::shared_ptr<ArrayA> > _As;
-    
-    size_t _num_branches;
+    std::auto_ptr<ArrayT> _T;
+    std::auto_ptr<ArrayA> _A;
     
     size_t _max_retrievals, _num_retrievals;
 
@@ -310,15 +251,13 @@ public:
     /// this array.
     static des_t newArray (const std::string& name,
 			   size_t len, size_t elem_size,
-			   CryptoProviderFactory * crypt_fact,
-			   unsigned depth)
+			   CryptoProviderFactory * crypt_fact)
 	throw (better_exception);
 
     /// in the case of an exisitng array, don;t provide any length params, but
     /// read them (and the atrray) of the host
     static des_t newArray (const std::string& name,
-			   CryptoProviderFactory * crypt_fact,
-			   unsigned depth)
+			   CryptoProviderFactory * crypt_fact)
 	throw (better_exception);
 
 
@@ -327,35 +266,24 @@ public:
     static ArrayHandle & getArray (des_t num);
 
 
-    /// do a select operation, and return the handle of the result.
-    /// @param sel_first if true select the first array, if false the second one.
-    static ArrayHandle & select (ArrayHandle& a,
-				 ArrayHandle& b,
-				 bool sel_first,
-				 unsigned depth);
-
     /// return a reference to this ArrayHandle's descriptor
     const des_t & getDescriptor() const
 	{
 	    return _desc;
 	}
 
-    void setLastDepth (unsigned d) {
-	_last_depth = d;
-    }
-
     
-    // the three methods just proxy on to the Array object, adding a branch
-    // parameter.
-
+    //
+    // the three methods just proxy on to the Array object
+    //
+    
     /// Write a value to an array index.
     /// @param idx the target index
     /// @param off the offset in bytes within that index, where we place the new
     /// value
     ArrayHandle &
     write (boost::optional<index_t> idx, size_t off,
-	   const ByteBuffer& val,
-	   unsigned depth)
+	   const ByteBuffer& val)
 	throw (better_exception);
 
     /// Read the value from an array index.
@@ -363,11 +291,10 @@ public:
     /// @param idx the index
     /// @return new ByteBuffer with the value
     ArrayHandle &
-    read (boost::optional<index_t> i, ByteBuffer & out, unsigned depth)
+    read (boost::optional<index_t> i, ByteBuffer & out)
 	throw (better_exception);
     
     /// Write a value non-hidden, probably during initialization.
-    /// FIXME: do we need to consider branches here?
     void write_clear (index_t i, const ByteBuffer& val)
 	throw (host_exception, comm_exception)
 	{
@@ -377,7 +304,7 @@ public:
     ByteBuffer read_clear (index_t i)
 	throw (better_exception)
 	{
-	    return _arr->read_clear (i, _branch);
+	    return _arr->read_clear (i);
 	}
 
     size_t length () const
@@ -393,39 +320,26 @@ private:
 
     // used in newArray
     ArrayHandle (boost::shared_ptr<Array> arr,
-		 index_t branch,
-		 unsigned depth,
 		 des_t desc)
 	: _arr		(arr),
-	  _branch	(branch),
-	  _last_depth	(depth),
-	  _desc		(desc),
-	  _has_branched	(false)
+	  _desc		(desc)
 	{}
 
-    static des_t insert_arr (const boost::shared_ptr<Array>& arr,
-			     unsigned depth);
-
-    des_t make_new_branch (unsigned depth);
+    static des_t insert_arr (const boost::shared_ptr<Array>& arr);
 
     boost::shared_ptr<Array> _arr;
     
-    index_t _branch;
-
-    unsigned _last_depth;
-
     des_t _desc;
-
-    bool _has_branched;
 
     //
     // static
     //
-    // the array map
-    typedef std::map<int, ArrayHandle> map_t;
-    static map_t _arrays;
-    static int _next_array_num;
 
+    typedef std::map<int, ArrayHandle> map_t;
+    /// the array map
+    static map_t _arrays;
+
+    static int _next_array_num;
 
 };
 
