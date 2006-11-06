@@ -93,9 +93,8 @@ do_bin_op (gate_t::binop_t op,
 optional<int>
 do_un_op (gate_t::unop_t op, optional<int> x)
 {
-    // FIXME: should LNot (Nothing) be Nothing or True??
 
-    if (!x)
+    if (!x && op != gate_t::LNot)
     {
 	return optional<int>();
     }
@@ -103,7 +102,14 @@ do_un_op (gate_t::unop_t op, optional<int> x)
     switch (op) {
     case gate_t::Negate: return - *x;
     case gate_t::BNot:   return ~ *x;
-    case gate_t::LNot:   return ! *x;
+
+    // NOTE: LNot (NIL) -> True, for this reasoning:
+    // Enable has to be true in one branch and false in the other. which seems
+    // to mean, eg. that NOT (NIL) -> true, because we use a NOT to generate the
+    // false-branch enable value. If we have NOT(NIL) -> NIL, and a loop
+    // condition is NIL, then both enable bits for that conditional will be
+    // treated as false!
+    case gate_t::LNot:   return x ? (! *x) : 1;
     }
 }
 

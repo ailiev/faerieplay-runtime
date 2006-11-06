@@ -51,12 +51,14 @@ private:
 			   int num);
 	
     /// @return the descriptor of the resulting array
-    ByteBuffer do_read_array (const ByteBuffer& arr_ptr,
+    ByteBuffer do_read_array (bool enable,
+			      const ByteBuffer& arr_ptr,
 			      boost::optional<index_t> idx,
 			      ByteBuffer & o_val);
 
     /// @return the descriptot of the resulting array
-    ByteBuffer do_write_array (const ByteBuffer& arr_ptr_buf,
+    ByteBuffer do_write_array (bool enable,
+			       const ByteBuffer& arr_ptr_buf,
 			       size_t off,
 			       boost::optional<size_t> len,
 			       boost::optional<index_t> idx,
@@ -91,7 +93,7 @@ public:
 	// since the use of gate_logger is controlled by another macro, just
 	// have it log up to a very high priority.
 	gate_logger = Log::makeLogger ("gate-logger",
-				       Just ("run-circuit-gates.log"),
+				       Just (std::string ("run-circuit-gates.log")),
 				       Just (Log::DEBUG));
 #endif
 

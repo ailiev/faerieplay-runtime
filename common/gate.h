@@ -194,7 +194,17 @@ void makeOptBBNothing (ByteBuffer& io_buf)
     io_buf.data()[0] = 0;
 }
 
-// make an Optional ByteBuffer contain the specified bytes.
+/// make a NIL ByteBuffer of specified length
+inline
+ByteBuffer getOptBBNil (size_t len)
+{
+    ByteBuffer answer (len+1);
+    makeOptBBNothing (answer);
+    return answer;
+}
+
+
+/// make an Optional ByteBuffer contain the specified bytes.
 inline
 void makeOptBBJust (ByteBuffer & io_buf, const void * bytes, size_t len)
 {

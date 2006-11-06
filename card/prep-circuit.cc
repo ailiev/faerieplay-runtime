@@ -281,7 +281,7 @@ int prepare_gates_container (istream & gates_in,
 		assert (("Element size must be a multiple of the byte size of optional<int>",
 			 elem_size % OPT_BB_SIZE(int) == 0));
 		    
-		cerr << "Input array \"" <<  gate.comment << "\", elem size " << elem_size
+		cout << "Input array \"" <<  gate.comment << "\", elem size " << elem_size
 		     << endl;
 
 		    
@@ -301,7 +301,7 @@ int prepare_gates_container (istream & gates_in,
 
 		    for (int e_i = 0; e_i < NUM_ELEMS; e_i++)
 		    {
-			cerr << "Elt " << l_i << " field " << e_i << ": " << flush;
+			cout << "Elt " << l_i << " field " << e_i << ": " << flush;
 			// skip to next number
 			do
 			{}

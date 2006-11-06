@@ -353,12 +353,14 @@ void CircuitEval::do_gate (const gate_t& g)
     
     case gate_t::ReadDynArray:
     {
-	int arr_gate_num = g.inputs[0];
-	ByteBuffer arr_ptr = get_gate_val (arr_gate_num);
-	optional<index_t> idx = static_cast<optional<index_t> > (get_int_val (g.inputs[1]));
+	optional<int> 	    enable_i= get_int_val (g.inputs[0]);
+	ByteBuffer 	    arr_ptr = get_gate_val (g.inputs[1]);
+	optional<index_t>   idx     = static_cast<optional<index_t> > (get_int_val (g.inputs[2]));
+
+	bool enable = enable_i ? (*enable_i != 0) : false;
 	
 	ByteBuffer val;
-	ByteBuffer arr2 = do_read_array (arr_ptr, idx, val);
+	ByteBuffer arr2 = do_read_array (enable, arr_ptr, idx, val);
 
 	ByteBuffer outs [] = { arr2, val };
 	res_bytes = concat_bufs (outs, outs + ARRLEN(outs));
@@ -373,25 +375,27 @@ void CircuitEval::do_gate (const gate_t& g)
 	int off = g.op.params[0];
 	int len = g.op.params[1];
 
-	int arr_gate_num = g.inputs[0];
-
-	ByteBuffer arr_ptr = get_gate_val (arr_gate_num);
+	optional<int> enable_i = get_int_val (g.inputs[0]);
+	ByteBuffer arr_ptr     = get_gate_val (g.inputs[1]);
 	// the index to write to
-	optional<index_t> idx = static_cast<optional<index_t> > (get_int_val (g.inputs[1]));
+	optional<index_t> idx = static_cast<optional<index_t> > (get_int_val (g.inputs[2]));
 
 	// and load up the rest of the inputs into vals
-	vector<ByteBuffer> vals (g.inputs.size()-2);
+	vector<ByteBuffer> vals (g.inputs.size()-3);
 	// what a PITA to call a member function through STL algrithms...
-	transform (g.inputs.begin()+2,
+	transform (g.inputs.begin()+3,
 		   g.inputs.end(),
 		   vals.begin(),
 		   std::bind1st (std::mem_fun (&CircuitEval::get_gate_val),
 				 this));
 
+	bool enable = enable_i ? (*enable_i != 0) : false;
+
 	// concatenate the inputs
 	ByteBuffer ins = concat_bufs (vals.begin(), vals.end());
 
 	ByteBuffer arr_desc2 = do_write_array (
+	    enable,
 	    arr_ptr,
 	    off,
 	    len >= 0 ? Just((size_t)len) : none,			
@@ -538,7 +542,7 @@ void CircuitEval::do_gate (const gate_t& g)
 		      << " of " << arr.length() << " elements:" << std::endl;
 	    for (unsigned i=0; i < arr.length(); i++)
 	    {
-		(void) arr.read (i, buf);
+		(void) arr.read (true, i, buf);
 		// FIXME: this is converting to integers, not very general.
 		int_val = bb2optBasic<int> (buf);
 		if (!int_val) {
@@ -571,7 +575,7 @@ void CircuitEval::log_gate_value (const gate_t& g, const ByteBuffer& val)
 	  std::setiosflags(std::ios::left)
 	  << std::setw(14) << g.num
 //	 << std::setw(12) << (res ? itoa(*res) : "N")
-	  << write_value (g, res_bytes) );
+	  << write_value (g, val) );
     
 }
 #endif // LOGVALS
@@ -626,7 +630,8 @@ string CircuitEval::get_string_val (int gate_num)
 #endif
 
 
-ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
+ByteBuffer CircuitEval::do_read_array (bool enable,
+				       const ByteBuffer& arr_ptr,
 				       optional<index_t> idx,
 				       ByteBuffer & o_val)
 {
@@ -634,13 +639,14 @@ ByteBuffer CircuitEval::do_read_array (const ByteBuffer& arr_ptr,
     
     ArrayHandle & arr = get_array (arr_ptr);
 
-    ArrayHandle & arr2 = arr.read (idx, o_val);
+    ArrayHandle & arr2 = arr.read (enable, idx, o_val);
     
     return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }
 
 
-ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
+ByteBuffer CircuitEval::do_write_array (bool enable,
+					const ByteBuffer& arr_ptr_buf,
 					size_t off,
 					optional<size_t> len,
 					optional<index_t> idx,
@@ -656,7 +662,7 @@ ByteBuffer CircuitEval::do_write_array (const ByteBuffer& arr_ptr_buf,
 	assert (*len == new_val.len());
     }
     
-    ArrayHandle & arr2 = arr.write (idx, off, new_val);
+    ArrayHandle & arr2 = arr.write (enable, idx, off, new_val);
 
     return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }
@@ -698,7 +704,7 @@ write_value (const gate_t& g,
 {
     std::ostringstream os;
 
-    const size_t OPT_ARRDESC_SIZE = OPT_BB_SIZE(ArrayHandle::desc);
+    const size_t OPT_ARRDESC_SIZE = OPT_BB_SIZE(pir::ArrayHandle::des_t);
     
     if (g.typ.kind == gate_t::Array ||
 	g.op.kind == gate_t::ReadDynArray ||

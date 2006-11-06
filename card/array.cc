@@ -15,6 +15,8 @@
 #include <pir/card/io_flat.h>
 #include <pir/card/io_filter_encrypt.h>
 
+#include <common/gate.h>
+
 #include "stream/processor.h"
 #include "stream/helpers.h"
 
@@ -195,7 +197,8 @@ ByteBuffer Array::read (index_t idx)
 }
 
 
-void Array::write (index_t idx, size_t off,
+void Array::write (bool enable,
+		   index_t idx, size_t off,
 		   const ByteBuffer& val)
     throw (better_exception)
 {
@@ -215,8 +218,12 @@ void Array::write (index_t idx, size_t off,
     
     append_new_working_item (p_idx);
     
+    // if we pass a 'none' optional here, the item will not be updated (but
+    // re-encrypted as always)
     (void) _T->do_dummy_accesses (p_idx,
-				  std::make_pair (off, val));
+				  enable ?
+				  Just    (std::make_pair (off, val)) :
+				  Nothing (std::make_pair (off, val)));
 
 #endif
 
@@ -668,7 +675,8 @@ ArrayHandle::getArray (ArrayHandle::des_t desc)
 
 
 ArrayHandle &
-ArrayHandle::write (optional<index_t> idx, size_t off,
+ArrayHandle::write (bool enable,
+		    optional<index_t> idx, size_t off,
 		    const ByteBuffer& val)
     throw (better_exception)
 {
@@ -677,20 +685,20 @@ ArrayHandle::write (optional<index_t> idx, size_t off,
     
 
     if (!idx) {
-	// no write
-	// FIXME: need to concoct a dummy write here! cannot just return.
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::write() got a null index");
-	return *this;
+	_arr->write (false, 0, off, val);
     }
     else if (*idx < 0 || *idx >= length()) {
-	// FIXME: as above
+	_arr->write (false, 0, off, val);
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::write() got a outside-bounds index " << *idx);
-	return *this;
     }
-
-    _arr->write (*idx, off, val);
+    else {
+	// A Real Write!!
+	_arr->write (enable, *idx, off, val);
+    }
+    
     return *this;
 }
 
@@ -703,28 +711,40 @@ ArrayHandle::write (optional<index_t> idx, size_t off,
 /// that array branch. For now, the returned handle is always identical to the
 /// passed-in one.
 ArrayHandle &
-ArrayHandle::read (optional<index_t> idx,
+ArrayHandle::read (bool enable,
+		   optional<index_t> idx,
 		   ByteBuffer & out)
     throw (better_exception)
 {
+    ByteBuffer dummy;
+    
     LOG (Log::DEBUG, Array::_logger,
 	 "Read on desc " << _desc);
 
     
-    if (!idx) {
-	// FIXME: concoct a read here, and return NIL probably
+    if (!enable) {
+	dummy = _arr->read (0);
+	out = getOptBBNil (_arr->elem_size());
+    }	
+    else if (!idx) {
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::read() got a null index");
-	return *this;
+	
+	dummy = _arr->read (0);
+	out = getOptBBNil (_arr->elem_size());
     }
     else if (*idx < 0 || *idx >= length()) {
-	// FIXME: as above
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::read() got a outside-bounds index " << *idx);
-	return *this;
-    }
 
-    out = _arr->read (*idx);
+	dummy = _arr->read (0);
+	out = getOptBBNil (_arr->elem_size());
+    }
+    else{
+	// The real read!!
+	out = _arr->read (*idx);
+	dummy = getOptBBNil (_arr->elem_size());
+    }
 
     return *this;
 }

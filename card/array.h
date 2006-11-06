@@ -44,7 +44,7 @@ public:
     /// @param idx the target index
     /// @param off the offset in bytes within that index, where we place the new
     /// value
-    void write (index_t idx, size_t off,
+    void write (bool enable, index_t idx, size_t off,
                 const ByteBuffer& val)
         throw (better_exception);
 
@@ -69,9 +69,14 @@ public:
     void repermute ();
 
     /// get this array's length
-    size_t length ()
+    size_t length () const
 	{
 	    return N;
+	}
+
+    size_t elem_size () const
+	{
+	    return _elem_size;
 	}
 
     const std::string& name () const
@@ -282,7 +287,8 @@ public:
     /// @param off the offset in bytes within that index, where we place the new
     /// value
     ArrayHandle &
-    write (boost::optional<index_t> idx, size_t off,
+    write (bool enable,
+	   boost::optional<index_t> idx, size_t off,
 	   const ByteBuffer& val)
 	throw (better_exception);
 
@@ -291,7 +297,7 @@ public:
     /// @param idx the index
     /// @return new ByteBuffer with the value
     ArrayHandle &
-    read (boost::optional<index_t> i, ByteBuffer & out)
+    read (bool enable, boost::optional<index_t> i, ByteBuffer & out)
 	throw (better_exception);
     
     /// Write a value non-hidden, probably during initialization.

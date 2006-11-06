@@ -36,3 +36,13 @@ Tue Feb 21 15:46:48 2006
 Ran array-v1.sfdl (N=64) successfully on the card. Took 149 seconds, with stream
 proc cache set to 4K. Have a lot of tightening to do on the array branching
 code, and literal values in the circuit.
+
+
+
+<date>Sun Nov  5 18:09:49 2006</date>
+
+Some thought to be given to NIL values for enable bits. Enable has to be true in
+one branch and false in the other. which seems to mean, eg. that NOT (NIL) ->
+true, because we use a NOT to generate the false-branch enable value. If we have
+NOT(NIL) -> NIL, and a loop condition is NIL, then both enable bits for that
+conditional will be treated as false!
