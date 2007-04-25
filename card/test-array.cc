@@ -81,19 +81,19 @@ int main (int argc, char *argv[])
 
     for (unsigned i=0; i < PRINTTEST_LEN; i++) {
 	ByteBuffer b = basic2bb (1 << i);
-	printtest.write (i, 0, b);
+	printtest.write (true, i, 0, b);
     }
 
     // redo some of the writes to make sure that T has some elements in it.
     for (unsigned i=0; i < PRINTTEST_LEN; i += 4) {
 	ByteBuffer b = basic2bb (1 << i);
-	printtest.write (i, 0, b);
+	printtest.write (true, i, 0, b);
     }
 	
     // and put in some of those infamous all-1 bitpatterns
     ByteBuffer minusone = basic2bb (-1);
     for (unsigned i=0; i < PRINTTEST_LEN; i += 4) {
-	printtest.write (i, 0, minusone);
+	printtest.write (true, i, 0, minusone);
     }
 
     Array::print (cout, printtest);
@@ -127,7 +127,7 @@ int main (int argc, char *argv[])
 	if (cmd == "write") {
 	    getline (cmds, val);
 	    cout << "(" << val << ")";
-	    test.write (idx, 0, ByteBuffer (val));
+	    test.write (true, idx, 0, ByteBuffer (val));
 	    cout << " --> ()";
 	}
 	else if (cmd == "read") {

@@ -301,7 +301,7 @@ int prepare_gates_container (istream & gates_in,
 
 		    for (int e_i = 0; e_i < NUM_ELEMS; e_i++)
 		    {
-			cout << "Elt " << l_i << " field " << e_i << ": " << flush;
+//			cout << "Elt " << l_i << " field " << e_i << ": " << flush;
 			// skip to next number
 			do
 			{}

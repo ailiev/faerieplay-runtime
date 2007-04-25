@@ -97,6 +97,8 @@ struct gate_t {
     gate_t();
 
     index_t 		    num;
+    // TODO: get rid of the depth field, not needed when array gates have an
+    // enable bit.
     int			    depth;
     typ_t 		    typ;
     gate_op_t 		    op;

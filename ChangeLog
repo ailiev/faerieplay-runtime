@@ -1,3 +1,18 @@
+2006-11-06  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
+
+	* common/gate.cc (do_un_op): Modified handling of LNot (NIL).
+
+	* card/run-circuit.cc (do_gate,do_read_array,do_write_array):
+	Added 'enable' input handling.
+	(): fixed some logging stuff controlled by the LOGVALS
+	macro.
+
+	* card/array.cc (ArrayHandle::read,write): Added proper dummy
+	actions if index is NIL or out if range.
+
+	* card/{array.cc,array.h}: Added the 'enable' input in the
+	read/write functions.
+
 2006-11-05  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
 
 	* card/array.cc, card/run-circuit.cc: Removed all the array
