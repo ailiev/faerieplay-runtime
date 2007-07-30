@@ -15,13 +15,20 @@
 
 #include <pir/card/configs.h>
 #include <pir/card/io_flat.h>
+#include <pir/common/logging.h>
 
 #include <common/consts-sfdl.h>
 #include <common/gate.h>
-
 #include <common/misc.h>
 
+#include <json/get-path.h>
+// #include <json/bnfc/Parser.H>
+
 #include "array.h"
+
+// for stdin. wanted to use cstdio here, but it does not define std::stdin
+// apparently.
+#include <stdio.h>	
 
 
 using namespace std;
@@ -32,137 +39,52 @@ using pir::ArrayHandle;
 using boost::optional;
 
 
-auto_ptr<CryptoProviderFactory> g_provfact;
-
 
 int prepare_gates_container (istream & gates_in,
 			     const string& cct_name)
-    throw (io_exception, std::exception);
+    throw (io_exception, bad_arg_exception, std::exception);
 
 
 
-namespace {
-    Log::logger_t logger = Log::makeLogger ("prep-circuit",
-					    boost::none, boost::none);
-}
-
-
-void usage (char *argv[]) {
-    cerr << "Usage: " << argv[0] << " <circuit file> -n <circuit name>" << endl
-	 << "\t[-d <output directory>] default=" << STOREROOT << endl
-	 << endl
-	 << "Produces files:" << endl
-	 << CCT_CONT << ": container with the circuit gates, in text encoding,\n"
-	"\tand ordered topologically." << endl
-	 << GATES_CONT << ": container with the circuit gates, in text encoding,\n"
-	"\tand with gate number g in cont[g]." << endl
-	 << VALUES_CONT << ": container with the circuit values,\n"
-	"\tinitially blank except for the inputs" << endl;
+namespace
+{
+    Log::logger_t logger = Log::makeLogger ("circuit-vm.card.prep-circuit");
 }
 
 
 
-int main (int argc, char *argv[]) {
 
-    int num_gates;
+/// Convenience function to find an input array, squash it, and thrown an
+/// exception if it is missing.
+namespace
+{
+    vector< vector<int> > get_input_array (PathFinder & in_data,
+					   const vector<string>& path)
+	throw (bad_arg_exception)
+    {
+	optional<vector<Value*> > opt_list = in_data.findList (path);
 
-    string store_root = STOREROOT;
-    
-    ifstream gates_in;
-    
-    // shut up clog for now
-    /*
-    ofstream out("/dev/null");
-    if (out)
-	clog.rdbuf(out.rdbuf());
-    */
-    
-    //
-    // here we just scan for the store root directory
-    //
-    int opt;
-    opterr = 0;			// shut up error messages from getopt
-    while ((opt = getopt(argc, argv, "h")) != EOF) {
-	switch (opt) {
-
-	case 'h':		// help
-	    usage (argv);
-	    configs_usage (cerr, argv[0]);
-	    exit (EXIT_SUCCESS);
-
-	default:
-	    clog << "Got unknown opt " << char(optopt)
-		 << ", optarg=" << (optarg ? optarg : "null")
-		 << ", optind=" << optind << endl;
-	    optind++;		// HACK: skip the unknown option's parameter.
-				// What if there was no param?? - no problem,
-				// next call to getopt will just pick up the
-				// next option.
-	    break;
+	if (!opt_list) {
+	    string name;
+	    for (unsigned i=0; i<path.size(); ++i) {
+		name += path[i] + ".";
+	    }
+	    throw bad_arg_exception ("Could not find the input array named "
+				     + name + " in the input data provided");
 	}
+
+	return PathFinder::squashList (*opt_list);
     }
-
-
-    
-    // need one more param, the circuit file name
-    if (optind >= argc) {
-	usage(argv);
-	exit (EXIT_SUCCESS);
-    }
-
-    clog << "optind = " << optind
-	 << ", using circuit file " << argv[optind] << endl;
-
-    gates_in.open  (argv[optind]);
-
-    if (!gates_in) {
-	cerr << "Failed to open circuit file " << argv[optind] << endl;
-	exit (EXIT_FAILURE);
-    }
-    
-
-    
-    // reset the getopt loop, before redoing the option parsing in do_configs()
-    optind = 0;
-
-    init_default_configs ();
-    if ( do_configs (argc, argv) != 0 ) {
-	cerr << "Crytpo option parsing failed" << endl;
-	usage (argv);
-	exit (EXIT_SUCCESS);
-    }
-
-    
-    // initialize crypto
-    try
-    {
-	g_provfact = init_crypt (g_configs);
-    }
-    catch (const crypto_exception& ex)
-    {
-	cerr << "Error making crypto providers: " << ex.what() << endl;
-	exit (EXIT_FAILURE);
-    }
-
-
-    // and prepare the circuit and any input array containers.
-    try {
-	num_gates = prepare_gates_container (gates_in, g_configs.cct_name);
-    }
-    catch (exception & ex) {
-	cerr << "Exception! " << ex.what() << endl;
-	exit (1);
-    }
-    
 }
-
+					   
 
 const size_t CONTAINER_OBJ_SIZE = 128;
 
 
 int prepare_gates_container (istream & gates_in,
-			     const string& cct_name)
-    throw (io_exception, std::exception)
+			     const string& cct_name,
+			     CryptoProviderFactory * crypto_fact)
+    throw (io_exception, bad_arg_exception,  std::exception)
 {
 
     string line;
@@ -233,94 +155,140 @@ int prepare_gates_container (istream & gates_in,
     
     LOG (Log::INFO, logger,
 	 "cct_cont size=" << gates.size()
-	 << "; gates_cont size=" << max_gate + 1)
+	 << "; gates_cont size=" << max_gate + 1);
 
-    
+
+    // prepare the input extractor, from stdin. This will throw an exception on
+    // a parse error.
+    PathFinder in_vals (stdin);
+
+    LOG (Log::PROGRESS, logger, "Parsed inputs from stdin");
+
     index_t i = 0;
     FOREACH (g, gates) {
 	gate_t gate = unserialize_gate (g->second);
 
+	LOG (Log::DEBUG, logger,
+	     "Processing gate number " << gate.num);
+
 	if (gate.op.kind == gate_t::Input) {
+
+	    //
 	    // get the input
+	    //
+	    const string& input_name = gate.comment;
+	    const vector<string> input_path = split (".", input_name);
+	    
 	    switch (gate.typ.kind)
 	    {
 	    case gate_t::Scalar:
 	    {
-		int in;
+		LOG (Log::INFO, logger,
+		     "Obtaining scalar input " << input_name
+		     << " for gate " << gate.num);
+
+		optional<int> val = in_vals.find (input_path);
+		if (!val) {
+		    const string msg = "Could not locate input named '" + input_name;
+		    LOG (Log::CRIT, logger, msg);
+		    throw bad_arg_exception (msg);
+		}
 		
-		cout << "Need input " << gate.comment
-		     << " for gate " << gate.num << ": " << flush;
-		cin >> in;
+		ByteBuffer val_buf = optBasic2bb<int> (val);
 		
-		ByteBuffer val = optBasic2bb<int> (in);
+		LOG (Log::INFO, logger,
+		     "writing " << val_buf.len() << " byte input value");
 		
-		LOG (Log::DEBUG, logger,
-		     "writing " << sizeof(in) << " byte input value");
-		io_values.write (gate.num, val);
+		io_values.write (gate.num, val_buf);
 	    }
 	    break;
 
 	    case gate_t::Array:
 	    {
-		unsigned length	= gate.typ.params[0],
+		size_t length	= gate.typ.params[0],
 		    elem_size	= gate.typ.params[1];
 
 		// NOTE: use the gate comment for the array's name, the runtime
 		// has to do the same.
-		string arr_cont_name = gate.comment;
+		const string& arr_cont_name = input_name;
 
 		string in_str;
 		
-		const int NUM_ELEMS = elem_size / OPT_BB_SIZE(int);
+		const size_t num_components = elem_size / OPT_BB_SIZE(int);
 
-		// create the Array object to use to write
+		// create the Array object to use to write. It will encrypt
+		// before writing out.
 		Array arr (arr_cont_name,
 			   Just (make_pair (length, elem_size)),
-			   g_provfact.get());
+			   crypto_fact);
 
-		assert (("Element size must be a multiple of the byte size of optional<int>",
+		assert (((void) "Element size must be a multiple of the byte size "
+			 "of optional<int>",
 			 elem_size % OPT_BB_SIZE(int) == 0));
 		    
-		cout << "Input array \"" <<  gate.comment << "\", elem size " << elem_size
-		     << endl;
+		//
+		// collect all the values from the input data object.
+		//
+		
+		vector <vector<int> > vals =
+		    get_input_array (in_vals, input_path);
 
-		    
-		// and prompt for all the values and write them in there
-		for (int l_i = 0; l_i < length; l_i++)
+		if (vals.size() != length) {
+		    ostringstream os;
+		    os << "The input provided for array " << input_name
+		       << " should have " << length << " elements, but actually has "
+		       << vals.size() << ends;
+// TODO: make this a runtime check, based on some cmd line param or env
+// variable.
+#if STRICT_INPUT_ARRAY_LEN
+		    throw bad_arg_exception (os.str());
+#else
+		    LOG (Log::WARN, logger,
+			 os.str() << ", will use nil for the missing values");
+#endif
+		}
+		
+		for (unsigned l_i = 0; l_i < length; l_i++)
 		{
+		    
+		    // ASSUME: the array elements, per the SFDL program, are all
+		    // 32-bit integers, or structs of them. We do not supported
+		    // nested arrays currently.
 
-		    // the 'ins' vector is just to hold several values/struct
-		    // members going into a single array element, so re-create
-		    // empty for every iteration.
-		    vector<optional<int> > ins;
-
-		    // ASSUME: the array elements are all 32-bit integers, or
-		    // structs of them. If
-		    // they're not, won't be prompting and populating the values
-		    // correctly here.
-
-		    for (int e_i = 0; e_i < NUM_ELEMS; e_i++)
-		    {
-//			cout << "Elt " << l_i << " field " << e_i << ": " << flush;
-			// skip to next number
-			do
-			{}
-			while ( cin  >> in_str &&
-				(in_str.size() == 0 || in_str[0] == '#') );
-
-			ins.push_back (Just (atoi (in_str.c_str())));
+		    if (l_i < vals.size() && vals[l_i].size() != num_components) {
+			ostringstream os;
+			os << "The input provided for array " << input_name
+			   << " element " << l_i
+			   << " should have " << num_components
+			   << " components, but actually has "
+			   << vals[i].size() << ends;
+			throw bad_arg_exception (os.str());
 		    }
-
+		    
+		    // get all the array element components, or nil's if we have
+		    // run out of input elements.
 		    ByteBuffer ins_buf (elem_size);
-		    for (int i=0; i < NUM_ELEMS; i++)
+		    for (unsigned i=0; i < num_components; i++)
 		    {
 			ByteBuffer member(OPT_BB_SIZE(int));
-			makeOptBBJust (member, & (*ins[i]), sizeof (*ins[i]));
-			
-			LOG (Log::DEBUG, logger,
-			     "Writing int " << *ins[i] << ", bytebuffer " << member
-			     << " at idx " << l_i << " of array " << arr.name());
 
+			// if we have no more input values
+			if (l_i >= vals.size()) {
+			    // insert nil values
+			    makeOptBBNothing (member);
+			}
+			else {
+			    // insert bytes for the i'th component into the buffer
+			    // for the l_i'th array element.
+			    int * val = & vals[l_i][i];
+			    makeOptBBJust (member, val, sizeof (*val));
+			
+			    LOG (Log::DEBUG, logger,
+				 "Writing int " << (*val)
+				 << ", bytebuffer " << member
+				 << " at idx " << l_i << " of array " << arr.name());
+			}
+			    
 			// an alias at the correct offset of ins_buf
 			ByteBuffer member_dest (ins_buf,
 						i*OPT_BB_SIZE(int),
@@ -334,7 +302,8 @@ int prepare_gates_container (istream & gates_in,
 		}
 
 		// and write a blank value of the right size into the values
-		// table, the runtime will fill in the actual value.
+		// table. the runtime will load a handle to the array and provide
+		// that handle as the actual value for this gate.
                 io_values.write (gate.num,
 				 ByteBuffer (sizeof(ArrayHandle::des_t)));
 		
@@ -359,3 +328,4 @@ int prepare_gates_container (istream & gates_in,
 	
     return max_gate;
 }
+

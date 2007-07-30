@@ -39,11 +39,10 @@
 // myvalgrind.sh --tool=memcheck --num-callers=18 /home/sasho/work/code/sfdl-runtime/card/runtime -n v0
 
 
-std::auto_ptr<CryptoProviderFactory> g_provfact;
-
 
 // local functions.
-namespace {
+namespace
+{
     // print the value of a gate, whose result bytes are 'valbytes'
     std::string
     write_value (const gate_t& gate, const ByteBuffer& valbytes);
@@ -51,85 +50,23 @@ namespace {
     // get an array handle from an array pointer
     pir::ArrayHandle & get_array (const ByteBuffer& arr_ptr_buf);
 
-    Log::logger_t s_progress_logger = Log::makeLogger ("circuit-progress",
-						       boost::none,
-						       Just (Log::PROGRESS));
+    Log::logger_t logger = Log::makeLogger ("circuit-vm.card.run-circuit");
+    
+    Log::logger_t
+    s_progress_logger = Log::makeLogger ("circuit-vm.card.circuit-progress");
 
 }
 
 
 
-static void exception_exit (const std::exception& ex, const std::string& msg) {
+static void exception_exit (const std::exception& ex, const std::string& msg)
+{
     using namespace std;
     
-    cerr << msg << ":" << endl
-	 << ex.what() << endl
-	 << "Exiting ..." << endl;
+    LOG (Log::CRIT, logger, msg << ":" << ex.what() << "; Exiting ...");
     exit (EXIT_FAILURE);
 }
 
-#include <signal.h>		// for raise()
-void out_of_memory () {
-    using namespace std;
-    
-    cerr << "Out of memory!" << endl;
-    // trigger a SEGV, so we can get a core dump - useful when running on the
-    // 4758 when we can't debug interactively, but do get core dumps.	    
-    // * ((int*) (0x0)) = 42;
-    raise (SIGTRAP);
-    throw std::bad_alloc();
-}
-
-
-
-
-static void usage (const char* progname) {
-    using namespace std;
-    
-    cerr << "Usage: " << progname << " [-p <card server por>]" << endl
-	 << "\t[-d <crypto dir>]" << endl
-	 << "\t[-c (use 4758 crypto hw?)]" << endl
-	 << "\t[-n <circuit name>]" << endl
-	 << "Runs named circuit (that card_server is accessing)" << endl;
-}
-
-
-
-
-int main (int argc, char *argv[]) {
-
-    using namespace std;
-    using namespace pir;
-    
-    set_new_handler (out_of_memory);
-
-    init_default_configs ();
-    if ( do_configs (argc, argv) != 0 )
-    {
-	usage (argv[0]);
-	exit (EXIT_SUCCESS);
-    }
-
-//    try {
-	g_provfact = init_crypt (g_configs);
-
-	CircuitEval evaluator (g_configs.cct_name, g_provfact.get());
-
-	clog << "run-circuit starting circuit evaluation at "
-	     << epoch_time <<  endl;
-	
-	evaluator.eval ();
-	
-	clog << "run-circuit done with circuit evaluation at "
-	     << epoch_time << endl;
-
-//     }
-//     catch (const std::exception & ex) {
-// 	cerr << "Exception: " << ex.what() << endl;
-// 	exit (EXIT_FAILURE);
-//     }
-    
-}
 
 
 
@@ -420,6 +357,7 @@ void CircuitEval::do_gate (const gate_t& g)
 	// and bb2optBasic().
 
 	ByteBuffer val = get_gate_val (g.inputs[0]);
+
 	ByteBuffer out (len);
 	out.set (0);	// so it's not uninitialized
 	
@@ -433,32 +371,32 @@ void CircuitEval::do_gate (const gate_t& g)
 	}
 	else
 	{
+	    // the whole value is Just. But the component we want may still be
+	    // Nothing...
+	    
 	    // last index we need to read is (off+1)+(len-1)-1 = off+len-1,
 	    // so need	val.len() > off+len-1
 	    // or	val.len() >= off+len
-	    LOG (Log::DEBUG, logger,
-		 "Slicer has val.len()=" << val.len()
-		 << ",off=" << off << ",len=" << len);
 
 	    if (val.len() < off + len) {
 		// not enough data, presumably because an array read returned
 		// NIL (and thus only the array pointer and no data). return NIL.
-		LOG (Log::INFO, logger, "Slicer returning NIL");
+		LOG (Log::INFO, logger, "Slicer did not get enough bytes, returning NIL");
 		makeOptBBNothing (out);
 	    }
 	    else
 	    {
-		makeOptBBJust (out,
-			       val.data() + 1 + off, // + 1 to skip the Just
-						     // indicator byte
-			       len-1);		     // -1 for same reason.
-
-		LOG (Log::DEBUG, logger,
-		     "Slicer returns " << res_bytes);
+		// grab the needed bytes, which may represent NIL
+		// this is an alias into 'val'
+		out = ByteBuffer (val, off, len);
+		
 	    }
 	}
 
-	res_bytes = out;
+	// deep copy.
+	res_bytes = ByteBuffer (out, ByteBuffer::deepcopy());
+
+	LOG (Log::DEBUG, logger, "Slicer returns " << res_bytes);
     }
     break;
 
@@ -476,16 +414,28 @@ void CircuitEval::do_gate (const gate_t& g)
 	// internally by newArray), and write the number as the gate value
 	ArrayHandle::des_t arr_desc = ArrayHandle::newArray (g.comment,
 							     len, elem_size,
-							     g_provfact.get());
+							     _prov_fact);
 
 	
 	res_bytes = optBasic2bb (Just (arr_desc));
     }
     break;
+
+    case gate_t::Print:
+    {
+	const char msg[] =
+	    "Print gate not currently supported in circuit VM."
+	    " Please compile without enabling Print "
+	    "via the --gen-print flag to sfdlc.";
+
+	LOG (Log::CRIT, logger, msg);
+	throw unsupported_operation_exception (msg);
+    }
+    break;
     
 	
     default:
-	LOG (Log::ERROR, logger, "At gate " << g.num
+	LOG (Log::CRIT, logger, "At gate " << g.num
 	     << ", unknown operation " << g.op.kind);
 	exit (EXIT_FAILURE);
 
@@ -635,11 +585,12 @@ ByteBuffer CircuitEval::do_read_array (bool enable,
 				       optional<index_t> idx,
 				       ByteBuffer & o_val)
 {
-    optional<ArrayHandle::des_t> null;
-    
     ArrayHandle & arr = get_array (arr_ptr);
 
     ArrayHandle & arr2 = arr.read (enable, idx, o_val);
+
+    LOG (Log::DEBUG, logger,
+	 "do_read_array(): o_val = " << o_val);
     
     return optBasic2bb<ArrayHandle::des_t> (arr2.getDescriptor());
 }
@@ -653,8 +604,6 @@ ByteBuffer CircuitEval::do_write_array (bool enable,
 					const ByteBuffer& new_val)
     
 {
-    optional<ArrayHandle::des_t> desc, null;
-    
     ArrayHandle & arr = get_array (arr_ptr_buf);
     
     if (len)

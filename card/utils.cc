@@ -74,3 +74,18 @@ void hostio_write_int (FlatIO & io, index_t idx,
 }
 
 
+#include <signal.h>		// for raise()
+#include <iostream>
+void out_of_memory_coredump ()
+{
+    std::cerr << "Out of memory!" << std::endl;
+    // trigger a SEGV, so we can get a core dump - useful when running on the
+    // 4758 when we can't debug interactively, but do get core dumps.	    
+    // * ((int*) (0x0)) = 42;
+
+    // or, trap into the debugger.
+    raise (SIGTRAP);
+
+    // re-start process failure due to failed alloc.
+    throw std::bad_alloc();
+}

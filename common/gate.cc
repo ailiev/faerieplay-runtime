@@ -6,6 +6,7 @@
 #include <iterator>
 
 #include <pir/common/exceptions.h>
+#include <pir/common/logging.h>
 
 #include "gate.h"
 
@@ -15,6 +16,12 @@
 using namespace std;
 
 using boost::optional;
+
+
+namespace
+{
+    Log::logger_t logger = Log::makeLogger ("circuit-vm.common.gate");
+}
 
 
 gate_t::gate_t ()
@@ -83,7 +90,7 @@ do_bin_op (gate_t::binop_t op,
     case gate_t::BXor:	    return *x ^ *y;
 
     default:
-	cerr << "unknown binop " << op << endl;
+	LOG (Log::ERROR, logger, "unknown binop " << op);
     }
 
     // only get here if the last default case catches.
@@ -110,6 +117,9 @@ do_un_op (gate_t::unop_t op, optional<int> x)
     // condition is NIL, then both enable bits for that conditional will be
     // treated as false!
     case gate_t::LNot:   return x ? (! *x) : 1;
+
+	// not reached:
+    default:		return Nothing(0);
     }
 }
 
@@ -125,7 +135,7 @@ gate_t unserialize_gate (const string& gate)
     istringstream lines (gate);
     
 
-//    cerr << "the gate " << gate << endl;
+//    LOG (Log::ERROR, logger, << "the gate " << gate << endl;
     
     //
     // gate number
@@ -167,7 +177,8 @@ gate_t unserialize_gate (const string& gate)
 	    answer.typ.kind = gate_t::Scalar;
 	}
 	else {
-	    cerr << "Unknown type " << word << endl;
+	    LOG (Log::ERROR, logger,
+		 "gate " << answer.num << ": unknown gate return type " << word);
 	}
     }
     
@@ -240,7 +251,8 @@ gate_t unserialize_gate (const string& gate)
 #undef CKOP
 	    
 	    else {
-		cerr << "unknown BinOp " << word << endl;
+		LOG (Log::ERROR, logger,
+		     "gate " << answer.num << ": unknown BinOp " << word);
 	    }
 	}
 	else if (word == "UnOp") {
@@ -256,7 +268,7 @@ gate_t unserialize_gate (const string& gate)
 		answer.op.params[0] = gate_t::BNot;
 	    }
 	    else {
-		cerr << "unknown UnOp " << word << endl;
+		LOG (Log::ERROR, logger, "Unknown UnOp " << word);
 	    }
 	}
 	else if (word == "Input") {
@@ -288,8 +300,14 @@ gate_t unserialize_gate (const string& gate)
 	    line_str >> answer.op.params[0]; // element size
 	    line_str >> answer.op.params[1]; // array length
 	}
+	else if (word == "Print") {
+	    answer.op.kind = gate_t::Print;
+	    // TODO: have no way currently to store a string parameter to an op.
+	    // so cannot store the prompt
+	}
 	else {
-	    cerr << "Unknown gate op " << word << endl;
+	    LOG (Log::ERROR, logger,
+		 "gate " << answer.num << ": unknown gate op " << word);
 	}
     }
 

@@ -5,6 +5,8 @@
 // reads from the container CCT_CONT, and writes the encrypted values back in
 // there.
 
+#include "enc-circuit.h"
+
 #include <string>
 #include <stdexcept>
 
@@ -40,48 +42,18 @@ using namespace pir;
 using boost::shared_ptr;
 
 
-namespace {
-    Log::logger_t logger = Log::makeLogger ("enc-circuit",
-					    boost::none, boost::none);
-}
-
-
-
-static void exception_exit (const std::exception& ex, const string& msg) {
-    cerr << msg << ":" << endl
-	 << ex.what() << endl
-	 << "Exiting ..." << endl;
-    exit (EXIT_FAILURE);
-}
-
-
-static void usage (const char* progname) {
-    cerr << "Usage: " << progname << " [-p <card server por>]" << endl
-	 << "\t[-d <crypto dir>]" << endl
-	 << "\t[-c (use 4758 crypto hw?)]" << endl
-	 << "\t<circuit name>" << endl;
-}
-
-
-int main (int argc, char *argv[])
+namespace
 {
-
-    init_default_configs ();
-    if ( do_configs (argc, argv) != 0 ) {
-	usage (argv[0]);
-	exit (EXIT_SUCCESS);
-    }
-
-    auto_ptr<CryptoProviderFactory> provfact;
-
-    try {
-	provfact = init_crypt (g_configs);
-    }
-    catch (const crypto_exception& ex) {
-	exception_exit (ex, "Error making crypto providers");
-    }
+    Log::logger_t logger = Log::makeLogger ("circuit-vm.card.enc-circuit");
+}
 
 
+
+
+
+void do_encrypt (CryptoProviderFactory* crypt_fact)
+    throw (std::exception)
+{
     //
     // and do the work ...
     //
@@ -89,44 +61,37 @@ int main (int argc, char *argv[])
     FlatIO  vals_io (g_configs.cct_name + DIRSEP + VALUES_CONT, boost::none);
     FlatIO  cct_io  (g_configs.cct_name + DIRSEP + CCT_CONT, boost::none);
 
-    try {
-	ByteBuffer obj_bytes;
+    ByteBuffer obj_bytes;
 
-	FlatIO *conts[] = { &vals_io, &cct_io };
+    FlatIO *conts[] = { &vals_io, &cct_io };
 	
-	// go through all the containers
-	for (unsigned c = 0; c < ARRLEN(conts); c++) {
+    // go through all the containers
+    for (unsigned c = 0; c < ARRLEN(conts); c++) {
 	    
 //	    clog << "*** Working on container " << io->getName() << endl;
 	    
 	    
-	    FlatIO * io = conts[c];
+	FlatIO * io = conts[c];
 	    
-	    size_t num_objs = io->getLen();
+	size_t num_objs = io->getLen();
 	    
-	    // temp container to take encrypted objects
-	    FlatIO temp (io->getName() + "-enc",
-			 make_pair (io->getLen(), io->getElemSize()));
+	// temp container to take encrypted objects
+	FlatIO temp (io->getName() + "-enc",
+		     make_pair (io->getLen(), io->getElemSize()));
 
-	    temp.appendFilter (auto_ptr<HostIOFilter>
-			       (new IOFilterEncrypt (&temp,
-						     shared_ptr<SymWrapper>
-						     (new SymWrapper
-						      (provfact.get())))));
+	temp.appendFilter (auto_ptr<HostIOFilter>
+			   (new IOFilterEncrypt (&temp,
+						 shared_ptr<SymWrapper>
+						 (new SymWrapper
+						  (crypt_fact)))));
 
-	    // and transfer each object in the container
-	    stream_process ( identity_itemproc<>(),
-			     zero_to_n (num_objs),
-			     io,
-			     &temp );
+	// and transfer each object in the container
+	stream_process ( identity_itemproc<>(),
+			 zero_to_n (num_objs),
+			 io,
+			 &temp );
 
-	    // and move encrypted container back to original name.
-	    *io = temp;
-	}
+	// and move encrypted container back to original name.
+	*io = temp;
     }
-    catch (const std::exception & ex) {
-	cerr << "Exception: " << ex.what() << endl;
-	exit (EXIT_FAILURE);
-    }
-    
 }

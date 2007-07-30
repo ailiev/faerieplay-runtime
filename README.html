@@ -1,0 +1,116 @@
+<html>
+<head>
+<link href="../shared/style.css" rel="stylesheet" type="text/css" />
+</head>
+
+<body>
+
+<h1>Using the Circuit virtual machine</h1>
+
+<h2>Introduction</h2>
+
+The Circuit virtual machine (CVM) can execute circuits produced by the
+Faerieplay compiler. It takes a circuit and inputs for that circuit, executes
+the circuit on the inputs, and prints the result.
+
+<h2>The architecture</h2>
+
+<p>
+The CVM is intended to be run in the standard configuration for a system
+utlizing a hardware TTP: a small piece (ie. which needs little RAM) in the
+secure hardware, and a larger piece on the standard host machine. The secure
+hardware we support is the IBM 4758 secure coprocessor (SCop). The SCop program
+is called <code>cvm</code>, and the host program is called
+<code>card_server</code>.
+<p>
+The SCop piece can be be compiled to run on the host, communicating to the
+storage server over UDP. See the <a href="INSTALL.html">INSTALL</a> file for
+details on how to do this.
+
+<h2>Running</h2>
+
+<ul>
+<li>First obtain a circuit file from the compiler, eg.
+<code>prog.runtime</code>.
+
+<li>Generate inputs for the program in the C-Json format. Example C-Json files
+  can be found in the <code>sfdl</code> module, eg. <code>gcd-input.cjs</code>
+  and <code>insert-sort-input.cjs</code>.
+   <p>
+  Note that the C-Json format has some support for concatenating data files. Eg.
+  The inputs for gcd could be the monolithic <code>{a=35,b=28}</code>, or the
+  concatenation of <code>{a=25}</code> and <code>{b=35}</code>.
+
+<li>Start the storage server on the host, eg<br/>
+<pre>  $ card_server -d store</pre>
+  to use the directory 'store' for writing the data.
+  The running server can be used for many runs of the CVM.
+<p>It responds to two
+  signals:
+  <ul><li>SIGINT: delete all the data (arrays/containers) it has written</li>
+<li>SIGQUIT: exit</li>
+  </ul>
+
+<li> Run the circuit over the inputs:</br>
+<pre>  $ cvm prog.runtime < inputs.cjs</pre>
+  This will print the results on standard output.
+</li>
+</ul>
+
+<h2>Logging</h2>
+
+The CVM, as well as our other modules, use the flexible <em>log4cpp</em> logging
+package. The system defines multiple <em>loggers</em> by name, typically one for
+each compnent. Logging is configured dynamically using a configuration file,
+along several axes:
+<ul>
+<li> How verbose each component's logging output is,
+<li> Where logging messages are sent, eg. the console, or a file. This is handled by <em>appenders</em>.
+<li> The format of the logging messages.
+</ul>
+
+We have set up the logging system to look for a configuration file called
+<em>log4cpp.properties</em> in the current directory by default. The
+configuration file can be explicitly specified by providing an environment
+variable <em>log4cpp_config_file</em>. If no config file is found, the logging
+system prints a warning, and uses a default logging level. This will probably be
+too verbose for most users.
+<p>
+An example file <code>shared/log-quiet.properties</code> is provided which turns
+off all logging except error messages, and sends log output to the console.
+Another example <code>shared/log4cpp-full.properties</code> file, with extensive
+commenting, is provided to show more options of log4cpp.
+<p>
+The names of the loggers currently in the system can be obtained with the
+<code>get-logger-names.sh</code> script, run from the root code directory.
+Currently they are:
+<pre>
+circuit-vm.card.batcher-network
+circuit-vm.card.batcher-permute
+circuit-vm.card.circuit-progress
+circuit-vm.card.cvm
+circuit-vm.card.enc-circuit
+circuit-vm.card.gate-logger
+circuit-vm.card.prep-circuit
+circuit-vm.card.prep-circuit.test
+circuit-vm.card.run-circuit
+circuit-vm.card.run-circuit
+circuit-vm.card.run-circuit.test
+circuit-vm.card.stream-processor
+circuit-vm.common.gate
+json.get-path
+json.get-path.test
+mips.cpu
+mips.mem
+mips.runmips
+mips.syscall
+pir.card.configs
+pir.card.lr-permutation
+pir.common.test-logging
+pir.common.utils
+pir.host.hostcall
+</pre>
+
+
+</body>
+</htm>

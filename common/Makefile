@@ -1,7 +1,7 @@
 include ../header.make
 
-include $(PIR)/utils.make
-include $(PIR)/header.make
+include $(SHARED_DIR)/utils.make
+include $(SHARED_DIR)/header.make
 
 LIBS=libsfdl-common.$(LIBEXT)
 

@@ -61,9 +61,7 @@ using std::vector;
 
 
 namespace {
-    Log::logger_t logger = Log::makeLogger ("batcher-permute",
-					    boost::none,
-					    Just (Log::PROGRESS));
+    Log::logger_t logger = Log::makeLogger ("circuit-vm.card.batcher-permute");
 }
 
 

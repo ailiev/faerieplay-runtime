@@ -24,9 +24,9 @@
 namespace BatcherNetwork {
     extern Log::logger_t logger;
 
-    DECL_STATIC_INIT(logger = Log::makeLogger ("batcher-network",
-					       boost::none,
-					       boost::none));
+    DECL_STATIC_INIT(
+	logger = Log::makeLogger ("circuit-vm.card.batcher-network");
+	);
 }
 
 

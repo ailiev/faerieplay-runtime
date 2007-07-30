@@ -27,5 +27,11 @@ int hostio_read_int (FlatIO & io, index_t idx);
 void hostio_write_int (FlatIO & io, index_t idx,
 		       int val);
 
+///
+/// Convenient handler for memory exhaustion, which causes a core dump or some
+/// such hook to enable analysis.
+void out_of_memory_coredump ();
+
+
 
 #endif // _SFDL_CARD_UTILS_H

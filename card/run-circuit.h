@@ -87,14 +87,12 @@ public:
     static Log::logger_t logger, gate_logger;
 
     DECL_STATIC_INIT (
-	logger = Log::makeLogger ("run-circuit");
+	logger = Log::makeLogger ("circuit-vm.card.run-circuit");
 
 #ifdef LOGVALS
-	// since the use of gate_logger is controlled by another macro, just
+	// since the use of gate_logger is controlled by another macro, can
 	// have it log up to a very high priority.
-	gate_logger = Log::makeLogger ("gate-logger",
-				       Just (std::string ("run-circuit-gates.log")),
-				       Just (Log::DEBUG));
+	gate_logger = Log::makeLogger ("circuit-vm.card.gate-logger");
 #endif
 
 	);

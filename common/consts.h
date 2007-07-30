@@ -8,6 +8,6 @@ const std::string CCT_CONT = "circuit";
 // here gates are in their numbered slot
 const std::string GATES_CONT = "gates";
 
-//and here are gate values
+//and here are gate values, numbered as GATES_CONT
 const std::string VALUES_CONT = "values";
 

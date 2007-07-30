@@ -719,32 +719,39 @@ ArrayHandle::read (bool enable,
     ByteBuffer dummy;
     
     LOG (Log::DEBUG, Array::_logger,
-	 "Read on desc " << _desc);
+	 "Read on array descriptor " << _desc);
 
     
     if (!enable) {
 	dummy = _arr->read (0);
-	out = getOptBBNil (_arr->elem_size());
+
+	out = ByteBuffer (_arr->elem_size());
+	makeOptBBNothing (out);
     }	
     else if (!idx) {
-	LOG (Log::INFO, Array::_logger,
-	     "ArrayHandle::read() got a null index");
+	LOG (Log::ERROR, Array::_logger,
+	     "ArrayHandle::read() got a null index; returning null and continuing");
 	
 	dummy = _arr->read (0);
-	out = getOptBBNil (_arr->elem_size());
+	out = ByteBuffer (_arr->elem_size());
+	makeOptBBNothing (out);
     }
     else if (*idx < 0 || *idx >= length()) {
 	LOG (Log::INFO, Array::_logger,
 	     "ArrayHandle::read() got a outside-bounds index " << *idx);
 
 	dummy = _arr->read (0);
-	out = getOptBBNil (_arr->elem_size());
+	out = ByteBuffer (_arr->elem_size());
+	makeOptBBNothing (out);
     }
     else{
 	// The real read!!
 	out = _arr->read (*idx);
 	dummy = getOptBBNil (_arr->elem_size());
     }
+
+    LOG (Log::DEBUG, Array::_logger,
+	 "ArrayHandle::read() has set out to " << out);
 
     return *this;
 }

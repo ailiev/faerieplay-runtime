@@ -1,3 +1,13 @@
+2007-07-17  Sasho  <sasho@pipe.cs.dartmouth.edu>
+
+	* card/array.cc (read): Fixed a mistake which assumed that the
+	array element length does not include the Just-Nothing indicator
+	byte.
+
+	* card/run-circuit.cc (do_gate): Fixed bug where Slicer gate was
+	returning a Just value even though the struct component it refers
+	to was Nothing.
+
 2006-11-06  Alex Iliev  <sasho@pipe.cs.dartmouth.edu>
 
 	* common/gate.cc (do_un_op): Modified handling of LNot (NIL).

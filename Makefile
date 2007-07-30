@@ -1,21 +1,26 @@
-include ../pir/utils.make
+include config.make
 
-SUBDIRS = common card # host
+include $(SHARED_DIR)/common.make
+include $(SHARED_DIR)/utils.make
+
+SUBDIRS = common card
 
 subdirs: $(SUBDIRS)
 
-card host: common
+card: common
 
 $(SUBDIRS):
 	$(MAKE) -C $@ $(MAKECMDGOALS)
 
 all: subdirs
 clean: subdirs
+
 install: subdirs
+	$(INSTALL) run-circuit $(LEEDS_BIN)
+
 dep: subdirs
 
 doc: doxygen.project
 	doxygen doxygen.project
 
 .PHONY: subdirs $(SUBDIRS)
-

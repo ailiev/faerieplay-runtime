@@ -220,7 +220,8 @@ public:
     static Log::logger_t _logger;
     
     DECL_STATIC_INIT( Array::_logger = Log::makeLogger (
-			  "array", boost::none, boost::none); );
+			  "circuit-vm.card.array");
+	);
     
 };
 
@@ -295,7 +296,8 @@ public:
     /// Read the value from an array index.
     /// Encapsulates all the re-fetching and permuting, etc.
     /// @param idx the index
-    /// @return new ByteBuffer with the value
+    /// @param out The value read out of the array.
+    /// @return handle to (potentially new) Array.
     ArrayHandle &
     read (bool enable, boost::optional<index_t> i, ByteBuffer & out)
 	throw (better_exception);

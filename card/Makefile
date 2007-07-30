@@ -4,13 +4,17 @@
 
 include ../header.make
 
-include $(PIR)/utils.make
-include $(PIR)/header.make
+include $(SHARED_DIR)/utils.make
+include $(SHARED_DIR)/header.make
 
 
 
 SUBDIRS:=stream
 
+
+ifdef LOGVALS
+	CPPFLAGS += -DLOGVALS
+endif
 
 
 ifdef HAVE_4758_CRYPTO
@@ -28,10 +32,9 @@ ifdef RUNONCARD
 	CFLAGS += -march=i486
 endif
 
-DESTDIR=$(LEEDS_BIN)
-
-LIBSRCS=array.cc utils.cc batcher-permute.cc batcher-network.cc 
-SRCS=run-circuit.cc enc-circuit.cc prep-circuit.cc $(LIBSRCS)
+LIBSRCS=array.cc utils.cc batcher-permute.cc batcher-network.cc \
+	run-circuit.cc enc-circuit.cc prep-circuit.cc
+SRCS=cvm.cc $(LIBSRCS)
 
 TESTSRCS=$(wildcard test-*.cc)
 
@@ -43,17 +46,17 @@ TESTSRCS=$(wildcard test-*.cc)
 #4758_KERNEL_INCLUDE = $(TOP)/$(TREE)/card/linux-2.2.17/drivers
 
 # SCC communication headers
-SCC_INCLUDE = $(TOP)/$(TREE)/include
+SCC_INCLUDE = $(TOP_4758)/$(TREE_4758)/include
 
-ifdef HAVE_OPENSSL
-LDLIBS	    += -lssl -lcrypto
-CPPFLAGS    += -DHAVE_OPENSSL
-endif
+#ifdef HAVE_OPENSSL
+#LDLIBS	    += -lssl -lcrypto
+#CPPFLAGS    += -DHAVE_OPENSSL
+#endif
 
 LIB = sfdl-card
 
 LIBFILE = lib$(LIB).$(LIBEXT)
-EXES = runtime enc-circuit prep-circuit
+EXES = cvm
 
 TARGETS=$(LIBFILE) $(EXES)
 
@@ -73,13 +76,13 @@ build: $(TARGETS)
 
 install: subdirs build
 #	strip $(EXES)
-	$(INSTALL) $(LIBFILE)	$(LEEDS_LIB)
-	$(INSTALL) $(EXES)	$(LEEDS_BIN)
+	$(INSTALL) $(LIBFILE)	$(DIST_LIB)
+	$(INSTALL) $(EXES)	$(DIST_BIN)
 
 
 # external libraries. they get added into LDLIBS in common.make
-LIBDIRS		+= $(LEEDS_LIB) . ../common
-LDLIBFILES	+= -lcard -lsfdl-common -lcommon -lcard-stream
+LIBDIRS		+= $(DIST_LIB) . ../common
+LDLIBFILES	+= -lcard -lsfdl-common -lcommon -lcard-stream -ljson
 
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
@@ -88,15 +91,9 @@ $(EXES) : LDLIBFILES := -lsfdl-card $(LDLIBFILES)
 $(EXES): -lsfdl-card
 
 
-runtime: run-circuit.o $(LDLIBFILES)
+# the main driver file
+cvm: cvm.o $(LDLIBFILES)
 	$(CXXLINK)
-
-enc-circuit: enc-circuit.o $(LDLIBFILES)
-	$(CXXLINK)
-
-prep-circuit: prep-circuit.o $(LDLIBFILES)
-	$(CXXLINK)
-
 
 
 $(TESTEXES): $(LIBOBJS)

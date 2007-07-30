@@ -1,9 +1,7 @@
 include ../../header.make
 
-ROOTDIR := ../$(ROOTDIR)
-
-include $(PIR)/utils.make
-include $(PIR)/header.make
+include $(SHARED_DIR)/utils.make
+include $(SHARED_DIR)/header.make
 
 
 LIBSRCS = processor.cc

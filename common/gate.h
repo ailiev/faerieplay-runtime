@@ -29,6 +29,7 @@ struct gate_t {
 	Select,
 	Slicer,
 	Lit,
+	Print,
 	InitDynArray
     };
 
@@ -79,11 +80,15 @@ struct gate_t {
     };
 
 
+    // The return type of this gate, with any needed parameters, eg. array size.
     struct typ_t {
 	typ_kind_t 	kind;
 	int 	params [4];
     };
 
+
+    // The operation of this gate, with any needed (static) op parameters.
+    // (the inputs are handled separately, via the 'inputs' field)
     struct gate_op_t {
 	gate_op_kind_t		kind;
 	int 	params[4]; // currently need a max of 3 params
@@ -130,7 +135,9 @@ std::ostream& operator<< (std::ostream & out, const gate_t & g);
 //
 // HACK: miniamlistic serialization for optional<T> into a ByteBuffer
 //
-// uses the first byte to indicate whether the value is Just x or Nothing
+// uses the first byte to indicate whether the value is Just x or Nothing:
+// 0: Nothing, the remaining bytes don't matter.
+// 1: Just x, x serialized in the remaining bytes.
 //
 
 /// how many bytes for a flat version of an optional <type>?
@@ -140,6 +147,8 @@ template<class T>
 boost::optional<T>
 bb2optBasic (const ByteBuffer& buf)
 {
+    assert (buf.len() == OPT_BB_SIZE(T));
+	    
     if (buf.data()[0] == 0)
     {
 	return boost::optional<T> ();

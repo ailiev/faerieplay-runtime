@@ -1,11 +1,11 @@
 include ../header.make
 
-include $(PIR)/utils.make
-include $(PIR)/header.make
+include $(SHARED_DIR)/utils.make
+include $(SHARED_DIR)/header.make
 
 
-PIRCARD=$(PIR)/card
-PIRHOST=$(PIR)/host
+PIRCARD=$(SHARED_DIR)/card
+PIRHOST=$(SHARED_DIR)/host
 
 SRCS=
 

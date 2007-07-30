@@ -26,8 +26,9 @@ OPEN_NS
 namespace StreamProcessor {
     extern Log::logger_t logger;
 
-    DECL_STATIC_INIT(logger = Log::makeLogger ("stream-processor",
-					       boost::none, boost::none));
+    DECL_STATIC_INIT (
+	logger = Log::makeLogger ("circuit-vm.card.stream-processor");
+	);
 }
 
 

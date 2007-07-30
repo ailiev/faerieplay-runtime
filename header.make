@@ -5,11 +5,12 @@
 # deeper.
 
 
-ROOTDIR=..
+# this reading of MAKEFILE_LIST has to be done before any other files are
+# include-d!
+this_file := $(lastword $(MAKEFILE_LIST))
+this_dir := $(dir $(realpath $(this_file)))
 
-PIR=$(ROOTDIR)/../pir
-PIRCARD=$(PIR)/card
-PIRHOST=$(PIR)/host
+include $(this_dir)/config.make
 
 # the code/ directory
-CPPFLAGS += -I$(ROOTDIR)/.. -I$(PIR)
+CPPFLAGS += -I$(SHARED_DIR) -I$(SHARED_DIR)/..
