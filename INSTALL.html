@@ -1,3 +1,10 @@
+<html>
+<head>
+<link href="../shared/style.css" rel="stylesheet" type="text/css" />
+</head>
+
+<body>
+
 <h1>Installing Circuit virtual machine</h1>
 
 <h2>Prerequisites</h2>
@@ -11,8 +18,9 @@ installed.
      Need version 2.3b as the artifact layout (ie. what C, Bison etc. files are
      prodiuced) has changed since 2.2.
 
-<li> modules pir and json: present, built and installed. Their locations are
-  specified in config.make and can be changed.
+<li> modules <code>pir</code> and <code>json</code>: present, built and
+installed. Their installed locations are
+  specified in <code>config.make</code> and can be changed.
 </ul>
 
 <h2>Configuration</h2>
@@ -25,5 +33,8 @@ The main configuration decision is whether the TTP modules will run on a 4758, o
 $ make
 $ make install
 </pre>
-Installs the executables and shared objects (if used) into DIST_ROOT, which is
-specified in <code>config.make</code>.
+Installs the executables and shared objects (if used) into <code>DIST_ROOT</code>, which is
+specified in <code><code>config.make</code></code>.
+
+</body>
+</html>
