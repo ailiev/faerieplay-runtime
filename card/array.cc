@@ -78,11 +78,9 @@ using boost::none;
 
 
 
-namespace {
-    // instantiate the static array map
-    ArrayHandle::map_t ArrayHandle::_arrays;
-    ArrayHandle::des_t ArrayHandle::_next_array_num = 1;
-}
+// instantiate the static array map
+ArrayHandle::map_t ArrayHandle::_arrays;
+ArrayHandle::des_t ArrayHandle::_next_array_num = 1;
 
 
 // the static logger
@@ -504,6 +502,11 @@ Array::ArrayT::
 do_dummy_accesses (index_t target_index,
 		   const optional<pair<size_t, ByteBuffer> >& new_val)
 {
+    // NOTE: these two lines produce a warning with g++ version 4.1 and later:
+    // "warning: missing braces around initializer"
+    //
+    // This is an artifact of the implementation of boost::array, and can be
+    // ignored.
     boost::array<FlatIO*,2> in_ios =  { &_idxs, &_items };
     boost::array<FlatIO*,2> out_ios = { &_idxs, new_val ? &_items : NULL };
     

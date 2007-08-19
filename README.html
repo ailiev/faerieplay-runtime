@@ -57,59 +57,6 @@ details on how to do this.
 </li>
 </ul>
 
-<h2>Logging</h2>
-
-The CVM, as well as our other modules, use the flexible <em>log4cpp</em> logging
-package. The system defines multiple <em>loggers</em> by name, typically one for
-each compnent. Logging is configured dynamically using a configuration file,
-along several axes:
-<ul>
-<li> How verbose each component's logging output is,
-<li> Where logging messages are sent, eg. the console, or a file. This is handled by <em>appenders</em>.
-<li> The format of the logging messages.
-</ul>
-
-We have set up the logging system to look for a configuration file called
-<em>log4cpp.properties</em> in the current directory by default. The
-configuration file can be explicitly specified by providing an environment
-variable <em>log4cpp_config_file</em>. If no config file is found, the logging
-system prints a warning, and uses a default logging level. This will probably be
-too verbose for most users.
-<p>
-An example file <code>shared/log-quiet.properties</code> is provided which turns
-off all logging except error messages, and sends log output to the console.
-Another example <code>shared/log4cpp-full.properties</code> file, with extensive
-commenting, is provided to show more options of log4cpp.
-<p>
-The names of the loggers currently in the system can be obtained with the
-<code>get-logger-names.sh</code> script, run from the root code directory.
-Currently they are:
-<pre>
-circuit-vm.card.batcher-network
-circuit-vm.card.batcher-permute
-circuit-vm.card.circuit-progress
-circuit-vm.card.cvm
-circuit-vm.card.enc-circuit
-circuit-vm.card.gate-logger
-circuit-vm.card.prep-circuit
-circuit-vm.card.prep-circuit.test
-circuit-vm.card.run-circuit
-circuit-vm.card.run-circuit
-circuit-vm.card.run-circuit.test
-circuit-vm.card.stream-processor
-circuit-vm.common.gate
-json.get-path
-json.get-path.test
-mips.cpu
-mips.mem
-mips.runmips
-mips.syscall
-pir.card.configs
-pir.card.lr-permutation
-pir.common.test-logging
-pir.common.utils
-pir.host.hostcall
-</pre>
 
 
 </body>

@@ -48,7 +48,9 @@ template <class T>
 boost::array<T,1>
 make_array (const T& in)
 {
-    boost::array<T,1> answer = {in};
+    // NOTE: caved in and used double braces here, as the g++ warning produced
+    // otherwise causes too much noise.
+    boost::array<T,1> answer = { {in} };
     return answer;
 }
 
