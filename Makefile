@@ -16,7 +16,6 @@ all: subdirs
 clean: subdirs
 
 install: subdirs
-	$(INSTALL) run-circuit $(LEEDS_BIN)
 
 dep: subdirs
 
