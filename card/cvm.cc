@@ -54,6 +54,11 @@ int main (int argc, char * argv[])
 	usage (argv);
 	exit (EXIT_SUCCESS);
     }
+
+    if (optind >= argc) {
+	usage (argv);
+	exit (EXIT_SUCCESS);
+    }
     
     cct_filename = argv[optind];
     LOG (Log::INFO, logger, "using circuit file " << cct_filename);
