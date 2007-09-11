@@ -42,8 +42,9 @@ details on how to do this.
   concatenation of <code>{a=25}</code> and <code>{b=35}</code>.
 
 <li>Start the storage server on the host, eg<br/>
-<pre>  $ card_server -d store</pre>
-  to use the directory 'store' for writing the data.
+<pre>  $ card_server -d /tmp/faerieplay</pre>
+  to use the directory '/tmp/faerieplay' for writing the data. NOTE: this working directory is just an example, but it should be on a local, not a network drive. Otherwise the circuit VM will be very slow.
+ <p>
   The running server can be used for many runs of the CVM.
 <p>It responds to two
   signals:
