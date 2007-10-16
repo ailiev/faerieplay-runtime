@@ -112,6 +112,7 @@ $(SUBDIRS):
 # give the dependency generation step all the include dirs
 dep : CPPFLAGS += $(CCT_FLAGS)
 
-# FIXME: the dep target does not get propagated to subdirs.
+# recursive dep call.
+PREDEPCMD = $(MAKE) -C stream dep
 
 include ../footer.make
