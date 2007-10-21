@@ -1,3 +1,18 @@
+/*
+ * Circuit virtual machine for the Faerieplay hardware-assisted secure
+ * computation project at Dartmouth College.
+ *
+ * Copyright (C) 2003-2007, Alexander Iliev <sasho@cs.dartmouth.edu> and
+ * Sean W. Smith <sws@cs.dartmouth.edu>
+ *
+ * All rights reserved.
+ *
+ * This code is released under a BSD license.
+ * Please see LICENSE.txt for the full license and disclaimers.
+ *
+*/
+
+
 // program to encrypt a circuit object on the host. the circuit was produced in
 // cleartext by "prep-circuit.cc", and we want to MAC it before running it.
 // Since the SymWrapper class does enc and MAC together, we'll just do both.
