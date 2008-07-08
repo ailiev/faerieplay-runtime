@@ -162,7 +162,9 @@ boost::optional<T>
 bb2optBasic (const ByteBuffer& buf)
 {
     assert (buf.len() == OPT_BB_SIZE(T));
-	    
+
+    // TODO: explicitly implement the format spec where only the low-order bit
+    // of the tag byte indicates if nil or not.
     if (buf.data()[0] == 0)
     {
 	return boost::optional<T> ();
@@ -181,6 +183,8 @@ optBasic2bb (const boost::optional<T>& x)
 {
     ByteBuffer answer (1 + sizeof(T));
 
+    // TODO: explicitly implement the format spec where the low-order bit of the
+    // tag byte indicates if nil or not.
     byte isJust = bool(x);
 
     memcpy (answer.data(), &isJust, 1);
@@ -195,6 +199,7 @@ optBasic2bb (const boost::optional<T>& x)
 
 // is a byte buffer holding an encoded optional values (as done by optBasic2bb)
 // initialized (Just)?
+// FIXME: check just the first bit.
 inline
 bool isOptBBJust (const ByteBuffer& buf)
 {
@@ -213,6 +218,7 @@ getOptBBJustVal (const ByteBuffer& buf)
 
 
 // set a ByteBuffer (of any size >= 1) to NIL, by setting the first byte to 0
+// FIXME: should set just the first bit.
 inline
 void makeOptBBNothing (ByteBuffer& io_buf)
 {

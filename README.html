@@ -17,13 +17,13 @@ the circuit on the inputs, and prints the result.
 
 <p>
 The CVM is intended to be run in the standard configuration for a system
-utlizing a hardware TTP: a small piece (ie. which needs little RAM) in the
-secure hardware, and a larger piece on the standard host machine. The secure
-hardware we support is the IBM 4758 secure coprocessor (SCop). The SCop program
+utlizing a hardware TTP: a small component (ie. which needs little RAM) in the
+secure hardware, and a larger component on the standard host machine, which handles all larger storage. The secure
+hardware we support is the IBM 4758 secure coprocessor (SCop). The SCop component
 is called <code>cvm</code>, and the host program is called
 <code>card_server</code>.
 <p>
-The SCop piece can be be compiled to run on the host, communicating to the
+The SCop piece can also be compiled to run on the host, communicating to the
 storage server over UDP. See the <a href="INSTALL.html">INSTALL</a> file for
 details on how to do this.
 
