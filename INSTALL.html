@@ -9,18 +9,9 @@
 
 <h2>Prerequisites</h2>
 
-<li> The <code>pir</code> and <code>json</code> modules present, built and
-installed.
-
-<li> All prerequisites of the <code>pir</code> module. See the pir <a href="../pir/INSTALL.html">INSTALL</a> file.
-
-<li> <code>bnfc</code> version 2.3b or later, to compile the C-Json library.
-     Need version 2.3b as the artifact layout (ie. what C, Bison etc. files are
-     prodiuced) has changed since 2.2.
-
-<li> modules <code>pir</code> and <code>json</code>: present, built and
-installed. Their installed locations are
-  specified in <code>config.make</code> and can be changed.
+<li> The <a href="../pir/INSTALL.html"><code>pir</code></a> and <a href="../json/INSTALL.html"><code>json</code></a> modules present, built and
+installed, with prerequisites. Their source locations are
+  specified in <code>config.make</code> and can be changed.</li>
 </ul>
 
 <h2>Configuration</h2>
@@ -29,12 +20,13 @@ The main configuration decision is whether the TTP modules will run on a 4758, o
 
 <h2>Building</h2>
 
-<pre>
-$ make
-$ make install
+<pre class="command">
+$ make dep install
 </pre>
-Installs the executables and shared objects (if used) into <code>DIST_ROOT</code>, which is
+Installs the executables and shared objects (if used) into directory <code>DIST_ROOT</code>, which is
 specified in <code><code>config.make</code></code>.
 
+<hr>
+Subversion $Id: README.html 773 2008-03-30 12:56:38Z sasho $
 </body>
 </html>

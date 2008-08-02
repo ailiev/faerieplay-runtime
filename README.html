@@ -1,11 +1,12 @@
 <html>
 <head>
+  <title>Faerieplay Circuit Virtual Machine</title>
 <link href="../shared/style.css" rel="stylesheet" type="text/css" />
 </head>
 
 <body>
 
-<h1>Using the Circuit virtual machine</h1>
+<h1>Faerieplay Circuit Virtual Machine</h1>
 
 <h2>Introduction</h2>
 
@@ -29,36 +30,44 @@ details on how to do this.
 
 <h2>Running</h2>
 
-<ul>
+<ol>
 <li>First obtain a circuit file from the compiler, eg.
 <code>prog.runtime</code>.
 
-<li>Generate inputs for the program in the C-Json format. Example C-Json files
+<li>Write the inputs for the program in the <a href="../json/README.html">CSON</a> format. Example CSON files
   can be found in the <code>sfdl</code> module, eg. <code>gcd-input.cjs</code>
   and <code>insert-sort-input.cjs</code>.
    <p>
-  Note that the C-Json format has some support for concatenating data files. Eg.
-  The inputs for gcd could be the monolithic <code>{a=35,b=28}</code>, or the
+  Note that the CSON library used by the CVM has some support for concatenating data files. Eg.
+  The inputs for <code>gcd</code> could be the monolithic <code>{a=35,b=28}</code>, or the
   concatenation of <code>{a=25}</code> and <code>{b=35}</code>.
 
 <li>Start the storage server on the host, eg<br/>
-<pre>  $ card_server -d /tmp/faerieplay</pre>
-  to use the directory '/tmp/faerieplay' for writing the data. NOTE: this working directory is just an example, but it should be on a local, not a network drive. Otherwise the circuit VM will be very slow.
+<pre class="command">
+$ card_server -d /tmp/faerieplay
+</pre>
+to use the directory <code>/tmp/faerieplay</code> for writing the data. NOTE: this working directory is just an example, but it should be on a local, not a network drive. Otherwise the circuit VM will be very slow.
  <p>
   The running server can be used for many runs of the CVM.
 <p>It responds to two
   signals:
-  <ul><li>SIGINT: delete all the data (arrays/containers) it has written</li>
-<li>SIGQUIT: exit</li>
+  <ul><li>SIGINT (ctrl-C): delete all the data (arrays/containers) it has written</li>
+<li>SIGQUIT (ctrl-\): exit</li>
   </ul>
 
 <li> Run the circuit over the inputs:</br>
-<pre>  $ cvm prog.runtime < inputs.cjs</pre>
-  This will print the results on standard output.
+<pre class="command">
+$ cvm prog.runtime < inputs.cjs
+</pre>
+This will print the results on standard output.
+<p>
+  <b>NOTE:</b> the development version of the 4758 runs Linux and has a shell, so the cvm is invoked in the same manner on a 4758 as on a normal Linux host.
 </li>
-</ul>
+</ol>
 
 
 
+<hr>
+Subversion $Id: README.html 773 2008-03-30 12:56:38Z sasho $
 </body>
 </htm>

@@ -106,6 +106,9 @@ int main (int argc, char * argv[])
     }
     
 
+    LOG (Log::INFO, logger,
+         "Looking for host at " << host_address());
+    
     //
     // prepare the circuit and any input array containers.
     //
