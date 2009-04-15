@@ -289,7 +289,9 @@ void CircuitEval::do_gate (const gate_t& g)
 
 	selector = get_int_val (g.inputs[0]);
 	
-	// treat a Nothing selector as False
+	// treat a Nil selector as False
+    // TODO: seems like a correct and safer definition is to return Nil if
+    // the selector is Nil. See thesis gate semantics table.
 	sel_first = ! (!selector || !*selector);
 	    
 
