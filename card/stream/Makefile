@@ -1,9 +1,5 @@
 include ../../header.make
 
-include $(SHARED_DIR)/utils.make
-include $(SHARED_DIR)/header.make
-
-
 LIBSRCS = processor.cc
 
 LIB=libcard-stream
@@ -22,13 +18,13 @@ $(LIB).a: $(LIBOBJS)
 
 # external libraries. they get added into LDLIBS in common.make
 # need most of these only for the test code.
-LIBDIRS		+= $(LEEDS_LIB) ../common
-LDLIBFILES	+= -lcard -lsfdl-common -lcommon
+LIBDIRS		+= $(DIST_LIB) ../common
+LDLIBFILES	+= -lcard -lsfdl-common -lpircommon -lfaerieplay-common
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
 
 install: libs
-	$(INSTALL) $(LIBFILE) $(LEEDS_LIB)
+	$(INSTALL) $(LIBFILE) $(DIST_LIB)
 
 TESTSRCS=$(wildcard test-*.cc)
 

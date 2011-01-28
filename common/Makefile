@@ -1,7 +1,5 @@
 include ../header.make
 
-include $(SHARED_DIR)/utils.make
-include $(SHARED_DIR)/header.make
 
 LIBS=libsfdl-common.$(LIBEXT)
 
@@ -22,7 +20,7 @@ libsfdl-common.a: $(LIBOBJS)
 
 
 install: build
-	$(INSTALL) $(LIBS) $(LEEDS_LIB)
+	$(INSTALL) $(LIBS) $(DIST_LIB)
 
 
 include ../footer.make

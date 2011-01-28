@@ -4,10 +4,6 @@
 
 include ../header.make
 
-include $(SHARED_DIR)/utils.make
-include $(SHARED_DIR)/header.make
-
-
 
 SUBDIRS:=stream
 
@@ -82,17 +78,17 @@ install: subdirs build
 
 # external libraries. they get added into LDLIBS in common.make
 LIBDIRS		+= $(DIST_LIB) . ../common
-LDLIBFILES	+= -lcard -lsfdl-common -lcommon -lcard-stream -ljson
+LDLIBFILES	+= -lcard -lcard-stream -lsfdl-common -lpircommon -lfaerieplay-common -ljson
 
-vpath %.so $(LIBDIRS)
-vpath %.a $(LIBDIRS)
+#vpath %.so . $(LIBDIRS)
+#vpath %.a . $(LIBDIRS)
 
 $(EXES) : LDLIBFILES := -lsfdl-card $(LDLIBFILES)
 $(EXES): -lsfdl-card
 
 
 # the main driver file
-cvm: cvm.o $(LDLIBFILES)
+cvm: cvm.o $(LIBFILE)
 	$(CXXLINK)
 
 

@@ -21,9 +21,9 @@
 #include <boost/mpl/greater.hpp>
 #include <boost/mpl/if.hpp>
 
-#include <pir/common/utils.h>
-#include <pir/common/range-utils.h>
-#include <pir/common/logging.h>
+#include <faerieplay/common/utils.h>
+#include <faerieplay/common/range-utils.h>
+#include <faerieplay/common/logging.h>
 
 #include <pir/card/io_flat.h>
 

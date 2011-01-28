@@ -16,7 +16,7 @@
 #include <vector>
 #include <algorithm>
 
-#include <pir/common/exceptions.h>
+#include <faerieplay/common/exceptions.h>
 
 #include "utils.h"
 

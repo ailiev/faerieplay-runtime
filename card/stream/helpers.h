@@ -19,7 +19,7 @@
 #include <boost/iterator/counting_iterator.hpp>
 #include <boost/range.hpp>
 
-#include <pir/common/utils.h>
+#include <faerieplay/common/utils.h>
 
 
 #ifndef _STREAM_HELPERS_H

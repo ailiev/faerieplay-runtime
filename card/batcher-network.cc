@@ -13,7 +13,7 @@
 */
 
 
-#include <pir/common/logging.h>
+#include <faerieplay/common/logging.h>
 
 #include "batcher-network.h"
 

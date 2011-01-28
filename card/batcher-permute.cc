@@ -29,8 +29,8 @@
 #include <signal.h>		// for SIGTRAP
 
 
-#include <pir/common/logging.h>
-#include <pir/common/exceptions.h>
+#include <faerieplay/common/logging.h>
+#include <faerieplay/common/exceptions.h>
 #include <pir/common/sym_crypto.h>
 
 #include <pir/card/lib.h>

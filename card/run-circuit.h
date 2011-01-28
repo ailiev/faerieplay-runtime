@@ -17,7 +17,7 @@
 
 #include <boost/optional/optional.hpp>
 
-#include <pir/common/utils.h>
+#include <faerieplay/common/utils.h>
 #include <pir/common/sym_crypto.h>
 #include <pir/card/io_flat.h>
 

@@ -13,7 +13,7 @@
  *
  */
 
-#include <pir/common/exceptions.h>
+#include <faerieplay/common/exceptions.h>
 
 #include <string>
 

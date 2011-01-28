@@ -12,5 +12,8 @@ this_dir := $(dir $(realpath $(this_file)))
 
 include $(this_dir)/config.make
 
-# the code/ directory
-CPPFLAGS += -I$(SHARED_DIR) -I$(SHARED_DIR)/..
+make_incl_dir=$(DIST_ROOT)/make_include/faerieplay/common
+
+include $(make_incl_dir)/utils.make
+include $(make_incl_dir)/header.make
+include $(make_incl_dir)/shared-targets.make

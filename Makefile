@@ -1,7 +1,4 @@
-include config.make
-
-include $(SHARED_DIR)/common.make
-include $(SHARED_DIR)/utils.make
+include header.make
 
 SUBDIRS = common card
 

@@ -28,8 +28,8 @@
 
 #include <boost/shared_ptr.hpp>
 
-#include <pir/common/utils.h>
-#include <pir/common/exceptions.h>
+#include <faerieplay/common/utils.h>
+#include <faerieplay/common/exceptions.h>
 #include <pir/common/sym_crypto.h>
 
 #include <pir/card/io.h>

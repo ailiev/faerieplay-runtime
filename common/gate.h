@@ -20,8 +20,8 @@
 
 #include <string.h>
 
-#include <pir/common/exceptions.h>
-#include <pir/common/utils.h>
+#include <faerieplay/common/exceptions.h>
+#include <faerieplay/common/utils.h>
 
 #include <boost/optional/optional.hpp>
 

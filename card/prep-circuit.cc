@@ -25,12 +25,12 @@
 #include <boost/optional/optional.hpp>
 
 //#include <pir/host/objio.h>
-#include <pir/common/utils.h>
+#include <faerieplay/common/utils.h>
 #include <pir/common/consts.h>
 
 #include <pir/card/configs.h>
 #include <pir/card/io_flat.h>
-#include <pir/common/logging.h>
+#include <faerieplay/common/logging.h>
 
 #include <common/consts-sfdl.h>
 #include <common/gate.h>

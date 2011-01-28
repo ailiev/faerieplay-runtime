@@ -39,7 +39,7 @@
 #include <pir/card/configs.h>
 
 #include <pir/common/comm_types.h>
-#include <pir/common/logging.h>
+#include <faerieplay/common/logging.h>
 #include <pir/common/sym_crypto.h>
 
 #include <common/gate.h>

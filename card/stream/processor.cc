@@ -14,8 +14,8 @@
 
 #include "processor.h"
 
-#include <pir/common/logging.h>
-#include <pir/common/utils-macros.h>
+#include <faerieplay/common/logging.h>
+#include <faerieplay/common/utils-macros.h>
 
 
 OPEN_NS

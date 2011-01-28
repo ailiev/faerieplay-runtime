@@ -20,8 +20,8 @@
 #include <sstream>
 #include <iterator>
 
-#include <pir/common/exceptions.h>
-#include <pir/common/logging.h>
+#include <faerieplay/common/exceptions.h>
+#include <faerieplay/common/logging.h>
 
 #include "gate.h"
 

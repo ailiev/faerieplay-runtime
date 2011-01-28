@@ -15,7 +15,7 @@
 
 #include <string>
 
-#include <pir/common/utils.h>
+#include <faerieplay/common/utils.h>
 
 #include "misc.h"
 

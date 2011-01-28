@@ -24,7 +24,7 @@
 #include <boost/array.hpp>
 
 #include <pir/common/sym_crypto.h>
-#include <pir/common/utils.h>
+#include <faerieplay/common/utils.h>
 #include <pir/card/lib.h>
 #include <pir/card/io.h>
 #include <pir/card/io_flat.h>

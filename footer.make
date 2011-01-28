@@ -1,5 +1,7 @@
 # -*-makefile-*-
 
-# SHARED_DIR must be defined somewhere, eg a header make file.
+ifndef make_incl_dir
+    $(error Need value for variable make_incl_dir, should be set in header.make)
+endif
 
-include $(SHARED_DIR)/footer.make
+include $(make_incl_dir)/footer.make
