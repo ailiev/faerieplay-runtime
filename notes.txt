@@ -1,3 +1,11 @@
+<date>Sat Dec 24 15:18:32 2011</date>
+Git extraction out of the shared repository:
+git filter-branch --subdirectory-filter sfdl-runtime -- --all
+http://stackoverflow.com/questions/359424/detach-subdirectory-into-separate-git-repository
+In particular:
+http://stackoverflow.com/a/6295550
+
+
 Fri Jun 24 13:30:17 2005
 
 An important note about conditionals in circuits: all the operatins are done
