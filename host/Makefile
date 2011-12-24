@@ -1,25 +1,18 @@
 include ../header.make
 
-include $(SHARED_DIR)/utils.make
-include $(SHARED_DIR)/header.make
-
-
-PIRCARD=$(SHARED_DIR)/card
-PIRHOST=$(SHARED_DIR)/host
-
 SRCS=
 
-DESTDIR=$(LEEDS_BIN)
+DESTDIR=$(DIST_BIN)
 
 # no space problem on the host usually
 #CFLAGS += -g
 
 LIBDIRS	    += $(LEEDS_LIB) .
-LDLIBFILES  += -lsfdl-common -lcommon -lboost_filesystem -lsfdl-card
+LDLIBFILES  += -lsfdl-common -lpircommon -lfaerieplay-common -lboost_filesystem
 vpath %.so $(LIBDIRS)
 vpath %.a $(LIBDIRS)
 
-TARGETS=  #prep-circuit
+TARGETS=prep-circuit
 
 all: build
 
